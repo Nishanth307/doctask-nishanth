@@ -1,0 +1,74 @@
+# =========================
+# FastAPI
+# =========================
+fastapi
+uvicorn[standard]
+python-multipart
+
+# =========================
+# Database
+# =========================
+sqlalchemy
+alembic
+psycopg[binary]
+pgvector
+
+# =========================
+# LangGraph / LangChain
+# =========================
+langgraph
+langchain
+langchain-core
+langchain-community
+langchain-google-genai
+
+# =========================
+# Google Gemini
+# =========================
+google-generativeai
+
+# =========================
+# MCP
+# =========================
+fastmcp
+
+# =========================
+# Document Parsing
+# =========================
+pypdf
+pymupdf
+python-docx
+
+# =========================
+# File Watching
+# =========================
+watchdog
+
+# =========================
+# Configuration
+# =========================
+pydantic
+pydantic-settings
+python-dotenv
+
+# =========================
+# HTTP & Utilities
+# =========================
+httpx
+tenacity
+structlog
+orjson
+aiofiles
+
+# =========================
+# Testing
+# =========================
+pytest
+pytest-asyncio
+pytest-cov
+
+# =========================
+# Linter and Formatter
+# =========================
+black
+ruff

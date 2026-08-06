@@ -39,7 +39,7 @@ doctask-nishanth/
 │       │       ├── classify.py    # identify document type
 │       │       ├── extract.py     # extract structured facts with citations
 │       │       ├── reconcile.py   # detect contradictions across documents
-│       │       ├── examine.py     # validate against user rules
+│       │       ├── rule_checker.py     # validate against user rules
 │       │       └── update.py      # generate focused document updates
 │       │
 │       ├── services/
