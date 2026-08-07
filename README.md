@@ -116,3 +116,27 @@ doctask-nishanth/
     ├── api.md                     # API documentation
     ├── decisions.md               # architectural decisions and trade-offs
     └── writeup.md                 # Task 4 one-page write-up
+
+
+                         ┌──────────────┐
+                         │     Run      │
+                         └──────┬───────┘
+                                │ 1
+                ┌───────────────┼────────────────┐
+                │               │                │
+               *│              *│               1│
+          ┌─────▼─────┐   ┌─────▼─────┐   ┌──────▼──────┐
+          │ Document  │   │  Finding  │   │   Report    │
+          └───────────┘   └───────────┘   └─────────────┘
+                │
+                │1
+               *│
+        ┌───────▼────────┐
+        │ DocumentChunk   │
+        └────────────────┘
+
+Run
+ │
+ └───────────────*
+                 │
+          WorkflowEvent

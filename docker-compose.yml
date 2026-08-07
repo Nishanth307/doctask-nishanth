@@ -2,7 +2,7 @@ version: '3.9'
 
 services:
     postgres:
-        image: postgres:16-alpine
+        image: pgvector/pgvector:pg16
         container_name: doctask-postgres 
 
         restart: unless-stopped
@@ -27,4 +27,10 @@ services:
 
 volumes:
     postgres_data:
+
+# I'd mount a shared storage directory so uploaded documents and generated reports survive backend container restarts:
+
+# volumes:
+#   - ./backend:/app
+#   - ./storage:/app/storage
     
