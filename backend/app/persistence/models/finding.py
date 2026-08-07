@@ -38,7 +38,7 @@ class Finding(UUIDMixin, TimestampMixin, Base):
             name="finding_severity",
         ),
         nullable=False,
-        default=FindingSeverity.INFORMATIONAL,
+        default=FindingSeverity.INFO,
     )
 
     review_decision: Mapped[ReviewDecision] = mapped_column(
