@@ -1,8 +1,8 @@
 """create initial domain tables
 
-Revision ID: 7d3eb08c2afe
-Revises: e4953e19570a
-Create Date: 2026-08-07 05:44:15.413905
+Revision ID: be94ed8c20f8
+Revises: 
+Create Date: 2026-08-07 05:50:57.590612
 
 """
 from typing import Sequence, Union
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '7d3eb08c2afe'
-down_revision: Union[str, Sequence[str], None] = 'e4953e19570a'
+revision: str = 'be94ed8c20f8'
+down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
