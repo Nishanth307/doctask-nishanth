@@ -1,8 +1,8 @@
 """create initial domain tables
 
-Revision ID: be94ed8c20f8
+Revision ID: 6912b459264a
 Revises: 
-Create Date: 2026-08-07 05:50:57.590612
+Create Date: 2026-08-10 07:48:59.175049
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'be94ed8c20f8'
+revision: str = '6912b459264a'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -34,7 +34,8 @@ def upgrade() -> None:
     )
     op.create_table('documents',
     sa.Column('run_id', sa.UUID(), nullable=False),
-    sa.Column('file_name', sa.String(length=500), nullable=False),
+    sa.Column('filename', sa.String(length=500), nullable=False),
+    sa.Column('file_path', sa.String(length=1000), nullable=False),
     sa.Column('file_type', sa.String(length=25), nullable=False),
     sa.Column('checksum', sa.String(length=64), nullable=False),
     sa.Column('document_type', sa.Enum('CONTRACT', 'AMENDMENT', 'INVOICE', 'MEETING_NOTES', 'COMPLIANCE', 'STYLE_GUIDE', 'UNKNOWN', name='document_types'), nullable=False),

@@ -8,14 +8,15 @@ from app.persistence.repositories.run import RunRepository
 from app.schemas.run import RunCreate, RunResponse
 from app.services.run_service import RunService
 
-
 router = APIRouter(
     prefix="/runs",
     tags=["Runs"],
 )
 
 
-def get_run_service(db: Session = Depends(get_db)) -> RunService:
+def get_run_service(
+    db: Session = Depends(get_db),  # noqa: B008
+) -> RunService:
     repository = RunRepository(db)
 
     return RunService(repository)
@@ -26,7 +27,9 @@ def get_run_service(db: Session = Depends(get_db)) -> RunService:
     response_model=RunResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def create_run(payload: RunCreate, db: Session = Depends(get_db)) -> RunResponse:
+def create_run(
+    payload: RunCreate, db: Session = Depends(get_db)  # noqa: B008
+) -> RunResponse:
 
     service = get_run_service(db)
 
@@ -42,7 +45,7 @@ def create_run(payload: RunCreate, db: Session = Depends(get_db)) -> RunResponse
     "/{run_id}",
     response_model=RunResponse,
 )
-def get_run(run_id: UUID, db: Session = Depends(get_db)) -> RunResponse:
+def get_run(run_id: UUID, db: Session = Depends(get_db)) -> RunResponse:  # noqa: B008
 
     service = get_run_service(db)
 

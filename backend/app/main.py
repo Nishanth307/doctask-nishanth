@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from app.api.routes_ingest import router as ingest_router
 from app.api.routes_runs import router as runs_router
 from app.core.logging import configure_logging, logger
 
@@ -11,6 +12,7 @@ app = FastAPI(
 )
 
 app.include_router(runs_router, prefix="/api/v1")
+app.include_router(ingest_router, prefix="/api/v1")
 logger.info("application_started")
 
 

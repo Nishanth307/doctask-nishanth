@@ -1,0 +1,84 @@
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from sqlalchemy.orm import Session
+
+from app.core.config import settings
+from app.core.database import get_db
+from app.persistence.repositories.document import DocumentRepository
+from app.persistence.repositories.run import RunRepository
+from app.schemas.document import DocumentResponse
+from app.services.document_service import DocumentService
+from app.storage.storage import StorageService
+
+router = APIRouter(
+    prefix="/runs/{run_id}/documents",
+    tags=["Documents"],
+)
+
+
+def get_document_service(
+    db: Session = Depends(get_db),  # noqa: B008
+) -> DocumentService:
+    document_repository = DocumentRepository(db)
+    run_repository = RunRepository(db)
+
+    storage = StorageService(settings.UPLOAD_DIRECTORY)
+
+    return DocumentService(
+        document_repository=document_repository,
+        run_repository=run_repository,
+        storage=storage,
+    )
+
+
+@router.post(
+    "",
+    response_model=DocumentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_document(
+    run_id: UUID,
+    file: UploadFile = File(...),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> DocumentResponse:
+    if not file.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Filename is required",
+        )
+
+    content = await file.read()
+
+    service = get_document_service(db)
+
+    try:
+        document = service.upload_document(
+            run_id=run_id,
+            filename=file.filename,
+            content=content,
+        )
+
+        db.commit()
+        db.refresh(document)
+
+        return document
+
+    except ValueError as exc:
+        db.rollback()
+
+        message = str(exc)
+
+        if message == "Run not found":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=message,
+            )
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=message,
+        )
+    except Exception:
+        db.rollback()
+        raise
