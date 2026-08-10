@@ -23,8 +23,13 @@ class Document(UUIDMixin, TimestampMixin, Base):
         ForeignKey("runs.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
-    file_name: Mapped[str] = mapped_column(
+    filename: Mapped[str] = mapped_column(
         String(500),
+        nullable=False,
+    )
+
+    file_path: Mapped[str] = mapped_column(
+        String(1000),
         nullable=False,
     )
 
@@ -52,6 +57,7 @@ class Document(UUIDMixin, TimestampMixin, Base):
             f"Document("
             f"id={self.id!r}, "
             f"run_id={self.run_id!r}, "
-            f"file_name={self.file_name!r}, "
+            f"filename={self.filename!r}, "
+            f"file_path={self.file_path!r}, "
             f"file_type={self.file_type!r})"
         )

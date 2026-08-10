@@ -1,13 +1,13 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.constants import RunStatus, WorkflowStage
 
 
 class RunCreate(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=255)
 
 
 class RunResponse(BaseModel):
@@ -17,7 +17,7 @@ class RunResponse(BaseModel):
     name: str
     status: RunStatus
     stage: WorkflowStage
-    create_at: datetime
+    created_at: datetime
     updated_at: datetime
     completed_at: datetime | None
     error_message: str | None
