@@ -8,6 +8,10 @@ from app.services.providers.huggingface_embeddings import (
 
 class TestHuggingFaceEmbeddingService:
 
+    def setup_method(self):
+        from app.services.providers.huggingface_embeddings import _model_cache
+        _model_cache.clear()
+
     @patch(
         "app.services.providers."
         "huggingface_embeddings.SentenceTransformer"

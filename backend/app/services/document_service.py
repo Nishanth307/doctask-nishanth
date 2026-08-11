@@ -1,5 +1,7 @@
+from pathlib import Path
 from uuid import UUID
 
+from app.ingestion.pipeline import DocumentIngestionPipeline
 from app.persistence.models.document import Document
 from app.persistence.repositories.document import DocumentRepository
 from app.persistence.repositories.run import RunRepository
@@ -17,10 +19,12 @@ class DocumentService:
         document_repository: DocumentRepository,
         run_repository: RunRepository,
         storage: StorageService,
+        ingestion_pipeline: DocumentIngestionPipeline,
     ) -> None:
         self.document_repository = document_repository
         self.run_repository = run_repository
         self.storage = storage
+        self.ingestion_pipeline = ingestion_pipeline
 
     def upload_document(self, run_id: UUID, filename: str, content: bytes) -> Document:
         run = self.run_repository.get_by_id(run_id)
@@ -50,7 +54,16 @@ class DocumentService:
             checksum=checksum,
         )
 
-        return self.document_repository.create(document)
+        document = self.document_repository.create(document)
+
+        result = self.ingestion_pipeline.ingest(
+            document_id=document.id,
+            file_path=Path(document.file_path),
+        )
+
+        document.extracted_text = result.loaded_document.text
+
+        return document
 
     @staticmethod
     def _get_extension(filename: str) -> str:

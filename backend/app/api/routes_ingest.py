@@ -25,10 +25,35 @@ def get_document_service(
 
     storage = StorageService(settings.UPLOAD_DIRECTORY)
 
+    from app.ingestion.chunker import TextChunker
+    from app.services.providers.huggingface_embeddings import HuggingFaceEmbeddingService
+    from app.persistence.repositories.vector import VectorRepository
+    from app.ingestion.service import IngestionService
+    from app.ingestion.loaders.factory import DocumentLoaderFactory
+    from app.ingestion.pipeline import DocumentIngestionPipeline
+
+    chunker = TextChunker()
+    embedding_service = HuggingFaceEmbeddingService()
+    vector_repository = VectorRepository(db)
+    
+    ingestion_service = IngestionService(
+        chunker=chunker,
+        embedding_service=embedding_service,
+        vector_repository=vector_repository,
+    )
+    
+    loader_factory = DocumentLoaderFactory()
+    
+    ingestion_pipeline = DocumentIngestionPipeline(
+        loader_factory=loader_factory,
+        ingestion_service=ingestion_service,
+    )
+
     return DocumentService(
         document_repository=document_repository,
         run_repository=run_repository,
         storage=storage,
+        ingestion_pipeline=ingestion_pipeline,
     )
 
 

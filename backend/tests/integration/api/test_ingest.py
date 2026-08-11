@@ -1,14 +1,13 @@
 from io import BytesIO
+from unittest.mock import Mock, patch
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-
-from app.main import app
-
-
 import pytest
 from sqlalchemy import text
+
 from app.core.database import SessionLocal
+from app.main import app
 
 client = TestClient(app)
 
@@ -36,9 +35,17 @@ class TestDocumentIngestionAPI:
 
         return response.json()["id"]
 
-    def test_upload_pdf_successfully(self):
+    @patch("app.ingestion.loaders.pdf.PdfReader")
+    def test_upload_pdf_successfully(self, mock_pdf_reader):
         # Arrange
         run_id = self.create_run()
+
+        # Mock pdf reader behavior
+        mock_page = Mock()
+        mock_page.extract_text.return_value = "sample pdf content"
+        mock_reader = Mock()
+        mock_reader.pages = [mock_page]
+        mock_pdf_reader.return_value = mock_reader
 
         content = b"sample pdf content"
 
@@ -66,16 +73,23 @@ class TestDocumentIngestionAPI:
         assert body["file_type"] == ".pdf"
         assert body["checksum"] is not None
 
-    def test_upload_docx_successfully(self):
+    @patch("app.ingestion.loaders.docx.Document")
+    def test_upload_docx_successfully(self, mock_docx_document):
         # Arrange
         run_id = self.create_run()
+
+        # Mock docx document behavior
+        mock_p = Mock()
+        mock_p.text = "docx content"
+        mock_doc = Mock()
+        mock_doc.paragraphs = [mock_p]
+        mock_docx_document.return_value = mock_doc
 
         files = {
             "file": (
                 "contract.docx",
                 BytesIO(b"docx content"),
-                "application/vnd.openxmlformats-officedocument"
-                ".wordprocessingml.document",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             )
         }
 
@@ -163,9 +177,16 @@ class TestDocumentIngestionAPI:
         assert response.status_code == 400
         assert "Unsupported file type" in response.json()["detail"]
 
-    def test_upload_duplicate_document(self):
+    @patch("app.ingestion.loaders.pdf.PdfReader")
+    def test_upload_duplicate_document(self, mock_pdf_reader):
         # Arrange
         run_id = self.create_run()
+
+        mock_page = Mock()
+        mock_page.extract_text.return_value = "same document"
+        mock_reader = Mock()
+        mock_reader.pages = [mock_page]
+        mock_pdf_reader.return_value = mock_reader
 
         content = b"same document"
 
@@ -238,9 +259,16 @@ class TestDocumentIngestionAPI:
         # Assert
         assert response.status_code == 422
 
-    def test_upload_uppercase_extension(self):
+    @patch("app.ingestion.loaders.pdf.PdfReader")
+    def test_upload_uppercase_extension(self, mock_pdf_reader):
         # Arrange
         run_id = self.create_run()
+
+        mock_page = Mock()
+        mock_page.extract_text.return_value = "contract"
+        mock_reader = Mock()
+        mock_reader.pages = [mock_page]
+        mock_pdf_reader.return_value = mock_reader
 
         files = {
             "file": (
