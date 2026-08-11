@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
 
     TEMPERATURE: float = 0
-    EMBEDDING_MODEL: str = "text-embedding-004"
+    EMBEDDING_MODEL: str = "gemini-embedding-001"
     MAX_OUTPUT_TOKENS: int = 8192
 
     DEFAULT_PROVIDER: LLMProvider = LLMProvider.GEMINI
@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+psycopg://user:1234@localhost:5432/doctask"
     UPLOAD_DIRECTORY: str = "storage/uploads"
     GENERATED_DIRECTORY: str = "storage/generated"
+
+    EMBEDDING_PROVIDER: str = "google"
 
     LOG_LEVEL: str = "INFO"
 

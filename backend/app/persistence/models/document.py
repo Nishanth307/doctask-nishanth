@@ -11,6 +11,7 @@ from app.core.constants import DocumentType
 from app.persistence.models.mixins import TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
+    from app.persistence.models.document_chunk import DocumentChunkModel
     from app.persistence.models.run import Run
 
 
@@ -50,6 +51,12 @@ class Document(UUIDMixin, TimestampMixin, Base):
 
     run: Mapped[Run] = relationship(
         back_populates="documents",
+    )
+
+    chunks: Mapped[list[DocumentChunkModel]] = relationship(
+        "DocumentChunkModel",
+        back_populates="document",
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:

@@ -12,16 +12,30 @@ class PdfLoader(DocumentLoader):
 
     def load(self, file_path: Path) -> LoadedDocument:
         reader = PdfReader(str(file_path))
+
         pages = []
 
-        for page in reader.pages:
+        for page_number, page in enumerate(
+            reader.pages,
+            start=1,
+        ):
             text = page.extract_text() or ""
-            pages.append(text)
 
-        text = "\n\n".join(pages)
+            pages.append(
+                {
+                    "page": page_number,
+                    "text": text,
+                }
+            )
+
+        text = "\n\n".join(page["text"] for page in pages)
 
         return LoadedDocument(
             text=text,
             source=str(file_path),
-            metadata={"format": "pdf", "pages": len(reader.pages)},
+            metadata={
+                "format": "pdf",
+                "pages": len(reader.pages),
+                "page_contents": pages,
+            },
         )

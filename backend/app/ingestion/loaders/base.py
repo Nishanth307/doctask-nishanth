@@ -14,4 +14,5 @@ class LoadedDocument:
 class DocumentLoader(ABC):
     @abstractmethod
     def load(self, file_path: Path) -> LoadedDocument:
+        """Load a document and return its text."""
         pass
