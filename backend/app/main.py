@@ -1,14 +1,25 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.routes_ingest import router as ingest_router
 from app.api.routes_runs import router as runs_router
 from app.core.logging import configure_logging, logger
+from app.workflow.checkpointer import create_checkpointer
 
 configure_logging()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    cp = create_checkpointer()
+    cp.setup()
+    yield
+
 
 app = FastAPI(
     title="DocTask API",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.include_router(runs_router, prefix="/api/v1")

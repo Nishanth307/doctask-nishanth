@@ -1,0 +1,113 @@
+from uuid import uuid4
+
+from app.workflow.graph import (
+    build_workflow,
+    route_after_classify,
+    route_after_human_review,
+    route_after_reconcile,
+)
+
+
+class TestWorkflowRouting:
+
+    def test_classify_routes_to_extract_on_success(self):
+        state = {
+            "run_id": uuid4(),
+            "error": None,
+            "retry_count": 0,
+            "max_retries": 3,
+        }
+
+        assert route_after_classify(state) == "extract"
+
+    def test_classify_retries_when_error_exists(self):
+        state = {
+            "run_id": uuid4(),
+            "error": "LLM timeout",
+            "retry_count": 1,
+            "max_retries": 3,
+        }
+
+        assert route_after_classify(state) == "classify"
+
+    def test_classify_fails_after_max_retries(self):
+        state = {
+            "run_id": uuid4(),
+            "error": "LLM timeout",
+            "retry_count": 3,
+            "max_retries": 3,
+        }
+
+        assert route_after_classify(state) == "failed"
+
+    def test_reconcile_routes_to_examine_without_human_review(self):
+        state = {
+            "run_id": uuid4(),
+            "human_review_required": False,
+        }
+
+        assert route_after_reconcile(state) == "examine"
+
+    def test_reconcile_routes_to_human_review(self):
+        state = {
+            "run_id": uuid4(),
+            "human_review_required": True,
+        }
+
+        assert route_after_reconcile(state) == "human_review"
+
+    def test_human_approval_routes_to_examine(self):
+        state = {
+            "run_id": uuid4(),
+            "human_decision": "approve",
+        }
+
+        assert route_after_human_review(state) == "examine"
+
+    def test_human_rejection_routes_to_revise(self):
+        state = {
+            "run_id": uuid4(),
+            "human_decision": "reject",
+        }
+
+        assert route_after_human_review(state) == "revise"
+
+    def test_graph_compiles(self):
+        workflow = build_workflow()
+
+        assert workflow is not None
+
+    def test_workflow_execution_with_checkpoint(self):
+        # Run checkpointer setup to ensure tables exist
+        from app.workflow.checkpointer import create_checkpointer
+        cp = create_checkpointer()
+        cp.setup()
+
+        workflow = build_workflow()
+        run_id = uuid4()
+
+        initial_state = {
+            "run_id": run_id,
+            "document_ids": [uuid4()],
+            "documents": [],
+            "classification": {},
+            "extracted_facts": [],
+            "contradictions": [],
+            "findings": [],
+            "updates": [],
+            "error": None,
+            "human_review_required": False,
+        }
+
+        config = {
+            "configurable": {
+                "thread_id": str(run_id),
+            }
+        }
+
+        result = workflow.invoke(
+            initial_state,
+            config=config,
+        )
+
+        assert result["run_id"] == run_id
