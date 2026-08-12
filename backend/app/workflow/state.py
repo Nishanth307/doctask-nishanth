@@ -1,14 +1,17 @@
 from typing import Any
-from uuid import UUID 
+from uuid import UUID
 
-from typing_extensions import TypedDict 
+from typing_extensions import TypedDict
+
+from app.llm.schemas import ClassificationResult
+
 
 class WorkflowState(TypedDict, total=False):
     run_id: UUID 
     document_ids: list[UUID]
     documents: list[dict[str,Any]]
 
-    classification: dict[str, Any]
+    classification: ClassificationResult | None
     extracted_facts: list[dict[str, Any]]
     contradictions: list[dict[str, Any]]
     findings: list[dict[str,Any]]

@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app.api.routes_ingest import router as ingest_router

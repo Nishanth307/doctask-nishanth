@@ -1,4 +1,5 @@
-from enum import StrEnum 
+from enum import StrEnum
+
 
 class ModelProvider(StrEnum):
     GEMINI = "gemini"

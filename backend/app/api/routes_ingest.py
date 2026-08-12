@@ -26,11 +26,13 @@ def get_document_service(
     storage = StorageService(settings.UPLOAD_DIRECTORY)
 
     from app.ingestion.chunker import TextChunker
-    from app.services.providers.huggingface_embeddings import HuggingFaceEmbeddingService
-    from app.persistence.repositories.vector import VectorRepository
-    from app.ingestion.service import IngestionService
     from app.ingestion.loaders.factory import DocumentLoaderFactory
     from app.ingestion.pipeline import DocumentIngestionPipeline
+    from app.ingestion.service import IngestionService
+    from app.persistence.repositories.vector import VectorRepository
+    from app.services.providers.huggingface_embeddings import (
+        HuggingFaceEmbeddingService,
+    )
 
     chunker = TextChunker()
     embedding_service = HuggingFaceEmbeddingService()

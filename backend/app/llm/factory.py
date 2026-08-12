@@ -1,10 +1,12 @@
 from abc import ABC, abstractmethod
+
 from langchain_core.language_models import BaseChatModel
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.core.config import settings
-from app.core.constants.enums import GeminiModel, LLMProvider
+from app.core.constants.enums import GeminiModel
 from app.llm.enums import ModelName
+
 
 class ModelFactory(ABC):
     @abstractmethod

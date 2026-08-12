@@ -3,7 +3,6 @@ from sentence_transformers import SentenceTransformer
 from app.services.embedding_types import EmbeddingModel
 from app.services.embeddings import EmbeddingService
 
-
 _model_cache = {}
 
 

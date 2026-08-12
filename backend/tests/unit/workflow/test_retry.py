@@ -2,44 +2,44 @@ from uuid import uuid4
 
 from app.workflow.graph import (
     build_workflow,
-    route_after_classify,
-    classify_node
+    route_after_classify
 )
+from app.workflow.retry import execute_with_retry
 
 class TestClassifyRetry:
 
-    def test_classify_success_clears_error(self):
+    def test_execute_with_retry_success(self):
         # Arrange
         state = {
             "run_id": uuid4(),
             "error": None,
             "retry_count": 0,
-            "max_retries": 3,
-            "simulate_failure": False,
         }
+        dummy_node = lambda s: {**s, "processed": True}
 
         # Act
-        result = classify_node(state)
+        result = execute_with_retry(dummy_node, state)
 
         # Assert
+        assert result.get("processed") is True
         assert result["error"] is None
         assert result["retry_count"] == 0
 
-    def test_classify_failure_increments_retry_count(self):
+    def test_execute_with_retry_failure_increments_retry_count(self):
         # Arrange
         state = {
             "run_id": uuid4(),
             "error": None,
             "retry_count": 0,
-            "max_retries": 3,
-            "simulate_failure": True,
         }
+        def dummy_node(s):
+            raise RuntimeError("Something went wrong")
 
         # Act
-        result = classify_node(state)
+        result = execute_with_retry(dummy_node, state)
 
         # Assert
-        assert result["error"] == "Classification failed"
+        assert result["error"] == "Something went wrong"
         assert result["retry_count"] == 1
 
     def test_classify_retries_when_retry_limit_not_reached(self):
