@@ -215,3 +215,163 @@ class TestRunService:
         # Assert
         assert result.status == RunStatus.FAILED
         assert result.error_message == ""
+
+    def test_start_workflow(self):
+        # Arrange
+        workflow_service = Mock()
+
+        workflow_service.start.return_value = {
+            "thread_id": "thread-123",
+            "state": {
+                "status": "completed",
+            },
+        }
+
+        service = RunService(
+            self.repository,
+            workflow_service=workflow_service,
+        )
+
+        run_id = uuid4()
+
+        run = Run(
+            id=run_id,
+            name="Contract Review",
+            status=RunStatus.PENDING,
+            stage=WorkflowStage.INGESTION,
+        )
+
+        # Act
+        result = service.start_workflow(run)
+
+        # Assert
+        assert result["thread_id"] == "thread-123"
+        assert result["state"]["status"] == "completed"
+
+        assert run.status == RunStatus.RUNNING
+        assert run.stage == WorkflowStage.INGESTION
+
+        workflow_service.start.assert_called_once_with(
+            state={
+                "run_id": run_id,
+                "retry_count": 0,
+                "max_retries": 3,
+                "human_review_required": False,
+                "human_decision": None,
+                "error": None,
+            },
+            thread_id=str(run_id),
+        )
+
+    def test_resume_workflow_with_approval(self):
+        # Arrange
+        workflow_service = Mock()
+
+        workflow_service.resume.return_value = {
+            "thread_id": "thread-123",
+            "state": {
+                "human_decision": "approve",
+            },
+        }
+
+        service = RunService(
+            self.repository,
+            workflow_service=workflow_service,
+        )
+
+        run_id = uuid4()
+
+        run = Run(
+            id=run_id,
+            name="Contract Review",
+            status=RunStatus.RUNNING,
+            stage=WorkflowStage.RECONCILIATION,
+        )
+
+        # Act
+        result = service.resume_workflow(
+            run,
+            "approve",
+        )
+
+        # Assert
+        assert result["state"]["human_decision"] == "approve"
+
+        workflow_service.resume.assert_called_once_with(
+            thread_id=str(run_id),
+            decision="approve",
+        )
+
+    def test_resume_workflow_with_rejection(self):
+        # Arrange
+        workflow_service = Mock()
+
+        workflow_service.resume.return_value = {
+            "thread_id": "thread-123",
+            "state": {
+                "human_decision": "reject",
+            },
+        }
+
+        service = RunService(
+            self.repository,
+            workflow_service=workflow_service,
+        )
+
+        run_id = uuid4()
+
+        run = Run(
+            id=run_id,
+            name="Contract Review",
+            status=RunStatus.RUNNING,
+            stage=WorkflowStage.RECONCILIATION,
+        )
+
+        # Act
+        result = service.resume_workflow(
+            run,
+            "reject",
+        )
+
+        # Assert
+        assert result["state"]["human_decision"] == "reject"
+
+        workflow_service.resume.assert_called_once_with(
+            thread_id=str(run_id),
+            decision="reject",
+        )
+
+    def test_start_workflow_without_workflow_service(self):
+        # Arrange
+        run = Run(
+            id=uuid4(),
+            name="Contract Review",
+            status=RunStatus.PENDING,
+            stage=WorkflowStage.INGESTION,
+        )
+
+        # Act / Assert
+        with pytest.raises(
+            RuntimeError,
+            match="WorkflowService is not configured",
+        ):
+            self.service.start_workflow(run)
+
+    def test_resume_workflow_without_workflow_service(self):
+        # Arrange
+        run = Run(
+            id=uuid4(),
+            name="Contract Review",
+            status=RunStatus.RUNNING,
+            stage=WorkflowStage.RECONCILIATION,
+        )
+
+        # Act / Assert
+        with pytest.raises(
+            RuntimeError,
+            match="WorkflowService is not configured",
+        ):
+            self.service.resume_workflow(
+                run,
+                "approve",
+            )

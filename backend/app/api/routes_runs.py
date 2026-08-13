@@ -5,8 +5,14 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.persistence.repositories.run import RunRepository
-from app.schemas.run import RunCreate, RunResponse
+from app.schemas.run import (
+    HumanDecisionRequest,
+    RunCreate,
+    RunResponse,
+    WorkflowRunResponse,
+)
 from app.services.run_service import RunService
+from app.workflow.service import WorkflowService
 
 router = APIRouter(
     prefix="/runs",
@@ -18,8 +24,12 @@ def get_run_service(
     db: Session = Depends(get_db),  # noqa: B008
 ) -> RunService:
     repository = RunRepository(db)
+    workflow_service = WorkflowService()
 
-    return RunService(repository)
+    return RunService(
+        repository = repository,
+        workflow_service=workflow_service,
+    )
 
 
 @router.post(
@@ -28,10 +38,10 @@ def get_run_service(
     status_code=status.HTTP_201_CREATED,
 )
 def create_run(
-    payload: RunCreate, db: Session = Depends(get_db)  # noqa: B008
+    payload: RunCreate,
+    db: Session = Depends(get_db),  # noqa: B008
+    service: RunService = Depends(get_run_service),  # noqa: B008
 ) -> RunResponse:
-
-    service = get_run_service(db)
 
     run = service.create_run(payload.name)
 
@@ -45,9 +55,11 @@ def create_run(
     "/{run_id}",
     response_model=RunResponse,
 )
-def get_run(run_id: UUID, db: Session = Depends(get_db)) -> RunResponse:  # noqa: B008
-
-    service = get_run_service(db)
+def get_run(
+    run_id: UUID,
+    db: Session = Depends(get_db),  # noqa: B008
+    service: RunService = Depends(get_run_service),  # noqa: B008
+) -> RunResponse:
 
     run = service.get_run(run_id)
 
@@ -58,3 +70,93 @@ def get_run(run_id: UUID, db: Session = Depends(get_db)) -> RunResponse:  # noqa
         )
 
     return run
+
+
+@router.post(
+    "/{run_id}/start",
+    response_model=WorkflowRunResponse,
+)
+def start_workflow(
+    run_id: UUID,
+    db: Session = Depends(get_db),  # noqa: B008
+    service: RunService = Depends(get_run_service),  # noqa: B008
+) -> WorkflowRunResponse:
+
+    run = service.get_run(run_id)
+
+    if run is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Run not found",
+        )
+
+    try:
+        result = service.start_workflow(run)
+
+        db.commit()
+        db.refresh(run)
+
+        return WorkflowRunResponse(
+            thread_id=result["thread_id"],
+            state=result["state"],
+        )
+
+    except Exception as exc:
+        service.fail_run(
+            run,
+            str(exc),
+        )
+
+        db.commit()
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Workflow failed to start",
+        ) from exc
+
+
+@router.post(
+    "/{run_id}/decision",
+    response_model=WorkflowRunResponse,
+)
+def submit_human_decision(
+    run_id: UUID,
+    payload: HumanDecisionRequest,
+    db: Session = Depends(get_db),  # noqa: B008
+    service: RunService = Depends(get_run_service),  # noqa: B008
+) -> WorkflowRunResponse:
+
+    run = service.get_run(run_id)
+
+    if run is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Run not found",
+        )
+
+    try:
+        result = service.resume_workflow(
+            run,
+            payload.decision,
+        )
+
+        db.commit()
+        db.refresh(run)
+
+        return WorkflowRunResponse(
+            thread_id=result["thread_id"],
+            state=result["state"],
+        )
+
+    except Exception as exc:
+        service.fail_run(
+            run,
+            str(exc),
+        )
+
+        db.commit()
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Workflow could not be resumed",
+        ) from exc

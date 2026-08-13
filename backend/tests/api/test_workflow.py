@@ -133,8 +133,9 @@ class TestWorkflowGraph:
 
         structured_model.invoke.side_effect = [
             ClassificationResult(
-                document_type="contract",
+                document_type=DocumentCategory.CONTRACT,
                 confidence=0.95,
+                reasoning="Contract document",
             )
         ]
 
@@ -215,9 +216,29 @@ class TestWorkflowGraph:
         graph,
         model_factory,
     ):
-        self.configure_successful_llm_responses(
-            model_factory,
-        )
+        structured_model = model_factory._structured_model
+        structured_model.invoke.side_effect = [
+            ClassificationResult(
+                document_type=DocumentCategory.CONTRACT,
+                confidence=0.95,
+                reasoning="Standard contract",
+            ),
+            ExtractionResult(
+                facts=[
+                    {
+                        "field": "party_a",
+                        "value": "ABC Ltd",
+                        "confidence": 0.70,
+                    }
+                ]
+            ),
+            ExaminationResult(
+                is_valid=True,
+                confidence=0.95,
+                issues=[],
+                summary="Document is valid.",
+            ),
+        ]
 
         thread_id = str(uuid4())
 

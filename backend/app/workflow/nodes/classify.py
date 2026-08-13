@@ -10,6 +10,9 @@ class ClassifyNode:
         self.model_name = model_name
 
     def __call__(self, state: WorkflowState) -> WorkflowState:
+        if state.get("simulate_failure"):
+            raise ValueError("Classification failed")
+
         model = self.model_factory.create_model(self.model_name)
 
         structured_model = model.with_structured_output(ClassificationResult)
