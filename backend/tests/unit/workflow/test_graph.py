@@ -111,3 +111,18 @@ class TestWorkflowRouting:
         )
 
         assert result["run_id"] == run_id
+    
+    def test_route_after_reconcile_requires_human_review(self):
+        state = {
+            "human_review_required": True,
+        }
+
+        assert route_after_reconcile(state) == "human_review"
+
+
+    def test_route_after_reconcile_continues_without_human_review(self):
+        state = {
+            "human_review_required": False,
+        }
+
+        assert route_after_reconcile(state) == "examine"

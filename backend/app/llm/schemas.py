@@ -28,4 +28,13 @@ class ExtractedFact(BaseModel):
 
 class ExtractionResult(BaseModel):
     facts: list[ExtractedFact]
-    
+
+
+class ExaminationResult(BaseModel):
+    is_valid: bool
+    confidence: float = Field(
+        ge=0.0,
+        le=1.0,
+    )
+    issues: list[str]
+    summary: str

@@ -2,27 +2,19 @@ from langgraph.graph import END, START, StateGraph
 
 from app.llm.enums import ModelName
 from app.llm.factory import DefaultModelFactory, ModelFactory
+from app.persistence.repositories.workflow_result import WorkflowResultRepository
 from app.workflow.checkpointer import create_checkpointer
 from app.workflow.nodes.classify import ClassifyNode
+from app.workflow.nodes.examine import ExamineNode
 from app.workflow.nodes.extract import ExtractNode
 from app.workflow.nodes.human_review import human_review_node
+from app.workflow.nodes.reconcile import ReconcileNode
+from app.workflow.nodes.update import UpdateNode
 from app.workflow.retry import execute_with_retry
 from app.workflow.state import WorkflowState
 
 
-def reconcile_node(state: WorkflowState) -> WorkflowState:
-    return state
-
-
 def revise_node(state: WorkflowState) -> WorkflowState:
-    return state
-
-
-def examine_node(state: WorkflowState) -> WorkflowState:
-    return state
-
-
-def update_node(state: WorkflowState) -> WorkflowState:
     return state
 
 
@@ -62,8 +54,14 @@ def route_after_classify(state: WorkflowState) -> str:
     return "extract"
 
 
-def build_workflow(model_factory: ModelFactory | None = None):
+def build_workflow(
+    model_factory: ModelFactory | None = None,
+    repository: WorkflowResultRepository | None = None,
+):
     model_factory = model_factory or DefaultModelFactory()
+    if repository is None:
+        from app.core.database import SessionLocal
+        repository = WorkflowResultRepository(SessionLocal())
 
     classify_node = ClassifyNode(
         model_factory=model_factory,
@@ -74,6 +72,15 @@ def build_workflow(model_factory: ModelFactory | None = None):
         model_factory=model_factory,
         model_name=ModelName.GEMINI_2_5_FLASH,
     )
+
+    reconcile_node = ReconcileNode()
+
+    examine_node = ExamineNode(
+        model_factory=model_factory,
+        model_name=ModelName.GEMINI_2_5_FLASH,
+    )
+
+    update_node = UpdateNode(repository=repository)
 
     def classify_with_retry(state: WorkflowState) -> WorkflowState:
         return execute_with_retry(

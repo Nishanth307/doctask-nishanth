@@ -3,7 +3,7 @@ from uuid import UUID
 
 from typing_extensions import TypedDict
 
-from app.llm.schemas import ClassificationResult
+from app.llm.schemas import ClassificationResult, ExaminationResult
 
 
 class WorkflowState(TypedDict, total=False):
@@ -25,4 +25,7 @@ class WorkflowState(TypedDict, total=False):
 
     error: str | None
     simulate_failure: bool 
+    examination: ExaminationResult | None
+    status: str | None
+    result_id: UUID | None
 
