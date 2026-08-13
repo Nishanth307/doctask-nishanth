@@ -24,6 +24,13 @@ class Run(UUIDMixin, TimestampMixin, Base):
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
 
+    thread_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
+
     status: Mapped[RunStatus] = mapped_column(
         Enum(RunStatus),
         default=RunStatus.PENDING,

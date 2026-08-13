@@ -169,3 +169,67 @@ class TestWorkflowService:
                 thread_id="thread-123",
                 decision="approve",
             )
+
+    def test_persist_result(self):
+        # Arrange
+        from app.services.workflow_result_service import WorkflowResultService
+        graph = MagicMock()
+        result_service = MagicMock(
+            spec=WorkflowResultService,
+        )
+
+        workflow_service = WorkflowService(
+            graph=graph,
+            result_service=result_service,
+        )
+
+        run_id = uuid4()
+
+        state = {
+            "status": "completed",
+            "classification": None,
+            "extracted_facts": [],
+        }
+
+        expected_result = MagicMock()
+
+        result_service.create_result.return_value = (
+            expected_result
+        )
+
+        # Act
+        result = workflow_service.persist_result(
+            run_id,
+            state,
+        )
+
+        # Assert
+        assert result is expected_result
+
+        result_service.create_result.assert_called_once_with(
+            run_id=run_id,
+            state=state,
+        )
+
+    def test_persist_result_requires_result_service(self):
+        # Arrange
+        graph = MagicMock()
+
+        workflow_service = WorkflowService(
+            graph=graph,
+        )
+
+        # Act & Assert
+        try:
+            workflow_service.persist_result(
+                uuid4(),
+                {"status": "completed"},
+            )
+        except RuntimeError as exc:
+            assert str(exc) == (
+                "WorkflowResultService is not configured"
+            )
+        else:
+            raise AssertionError(
+                "Expected RuntimeError"
+            )

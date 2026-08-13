@@ -5,6 +5,9 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.persistence.repositories.run import RunRepository
+from app.persistence.repositories.workflow_result import (
+    WorkflowResultRepository,
+)
 from app.schemas.run import (
     HumanDecisionRequest,
     RunCreate,
@@ -12,6 +15,9 @@ from app.schemas.run import (
     WorkflowRunResponse,
 )
 from app.services.run_service import RunService
+from app.services.workflow_result_service import (
+    WorkflowResultService,
+)
 from app.workflow.service import WorkflowService
 
 router = APIRouter(
@@ -23,12 +29,19 @@ router = APIRouter(
 def get_run_service(
     db: Session = Depends(get_db),  # noqa: B008
 ) -> RunService:
-    repository = RunRepository(db)
+    run_repository = RunRepository(db)
+
     workflow_service = WorkflowService()
 
+    workflow_result_repository = WorkflowResultRepository(db)
+    workflow_result_service = WorkflowResultService(
+        workflow_result_repository,
+    )
+
     return RunService(
-        repository = repository,
+        repository=run_repository,
         workflow_service=workflow_service,
+        workflow_result_service=workflow_result_service,
     )
 
 
@@ -101,12 +114,16 @@ def start_workflow(
             state=result["state"],
         )
 
-    except Exception as exc:
-        service.fail_run(
-            run,
-            str(exc),
-        )
+    except ValueError as exc:
+        db.rollback()
 
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    except Exception as exc:
+        service.fail_run(run, str(exc))
         db.commit()
 
         raise HTTPException(
@@ -148,12 +165,16 @@ def submit_human_decision(
             state=result["state"],
         )
 
-    except Exception as exc:
-        service.fail_run(
-            run,
-            str(exc),
-        )
+    except ValueError as exc:
+        db.rollback()
 
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    except Exception as exc:
+        service.fail_run(run, str(exc))
         db.commit()
 
         raise HTTPException(

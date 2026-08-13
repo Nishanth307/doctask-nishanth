@@ -5,52 +5,80 @@ from app.workflow.state import WorkflowState
 
 
 class ExtractNode:
-    def __init__(self,model_factory: ModelFactory,model_name: ModelName,) -> None:
+    def __init__(
+        self,
+        model_factory: ModelFactory,
+        model_name: ModelName,
+    ) -> None:
         self.model_factory = model_factory
         self.model_name = model_name
 
-    def __call__(self, state: WorkflowState) -> WorkflowState:
-        model = self.model_factory.create_model(self.model_name)
+    def __call__(
+        self,
+        state: WorkflowState,
+    ) -> WorkflowState:
+        retry_count = state.get("retry_count", 0)
 
-        structured_model = model.with_structured_output(ExtractionResult)
+        try:
+            model = self.model_factory.create_model(
+                self.model_name,
+            )
 
-        document_text = "\n\n".join(
-            document.get("text", "")
-            for document in state.get("documents", [])
-        )
+            structured_model = model.with_structured_output(
+                ExtractionResult,
+            )
 
-        classification = state.get("classification")
-        document_type = classification.document_type if classification else "other"
+            document_text = "\n\n".join(
+                document.get("text", "")
+                for document in state.get("documents", [])
+            )
 
-        prompt = f"""
-        You are a document information extraction system.
+            classification = state.get("classification")
 
-        The document was classified as:
+            document_type = (
+                classification.document_type
+                if classification
+                else "other"
+            )
 
-        {document_type}
+            prompt = f"""
+You are a document information extraction system.
 
-        Extract the important factual information from the document.
+The document was classified as:
 
-        For every fact return:
-        - field
-        - value
-        - confidence between 0 and 1
+{document_type}
 
-        Do not invent information.
-        Only extract information supported by the document.
+Extract the important factual information from the document.
 
-        Document:
+For every fact return:
+- field
+- value
+- confidence between 0 and 1
 
-        {document_text}
-        """
+Do not invent information.
+Only extract information supported by the document.
 
-        result: ExtractionResult = structured_model.invoke(prompt)
+Document:
 
-        return {
-            **state,
-            "extracted_facts": [
-                fact.model_dump()
-                for fact in result.facts
-            ],
-            "error": None,
-        }
+{document_text}
+"""
+
+            result: ExtractionResult = (
+                structured_model.invoke(prompt)
+            )
+
+            return {
+                **state,
+                "extracted_facts": [
+                    fact.model_dump()
+                    for fact in result.facts
+                ],
+                "error": None,
+            }
+
+        except Exception as exc:
+            return {
+                **state,
+                "retry_count": retry_count + 1,
+                "error": str(exc),
+            }

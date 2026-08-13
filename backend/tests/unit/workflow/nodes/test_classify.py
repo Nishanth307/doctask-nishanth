@@ -189,7 +189,7 @@ class TestClassifyNode:
         assert result["classification"].document_type == DocumentCategory.OTHER
         structured_model.invoke.assert_called_once()
 
-    def test_classify_propagates_model_exception(self):
+    def test_classify_converts_model_exception_to_error_state(self):
         # Arrange
         model_factory = MagicMock()
         model = MagicMock()
@@ -211,11 +211,66 @@ class TestClassifyNode:
             "documents": [{"text": "Some document"}],
             "classification": None,
             "error": None,
+            "retry_count": 0,
         }
 
-        # Act & Assert
-        with pytest.raises(RuntimeError, match="LLM unavailable"):
-            node(state)
+        # Act
+        result = node(state)
+
+        # Assert
+        assert result["classification"] is None
+        assert result["error"] == "LLM unavailable"
+        assert result["retry_count"] == 1
+
+    def test_classify_simulated_failure_increments_retry_count(self):
+        # Arrange
+        model_factory = MagicMock()
+
+        node = ClassifyNode(
+            model_factory=model_factory,
+            model_name=ModelName.GEMINI_2_5_FLASH,
+        )
+
+        state = {
+            "documents": [{"text": "Some document"}],
+            "retry_count": 1,
+            "simulate_failure": True,
+            "error": None,
+        }
+
+        # Act
+        result = node(state)
+
+        # Assert
+        assert result["retry_count"] == 2
+        assert result["error"] == "Classification failed"
+
+        model_factory.create_model.assert_not_called()
+
+    def test_classify_simulated_failure_starts_retry_count(self):
+        # Arrange
+        model_factory = MagicMock()
+
+        node = ClassifyNode(
+            model_factory=model_factory,
+            model_name=ModelName.GEMINI_2_5_FLASH,
+        )
+
+        state = {
+            "documents": [{"text": "Some document"}],
+            "retry_count": 0,
+            "simulate_failure": True,
+            "error": None,
+        }
+
+        # Act
+        result = node(state)
+
+        # Assert
+        assert result["retry_count"] == 1
+        assert result["error"] == "Classification failed"
+
+        model_factory.create_model.assert_not_called()
 
 
 def test_classification_rejects_invalid_confidence():

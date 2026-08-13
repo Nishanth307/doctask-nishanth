@@ -214,7 +214,7 @@ class TestExtractNode:
         assert result["extracted_facts"] == []
         assert result["error"] is None
 
-    def test_extract_propagates_model_exception(self):
+    def test_extract_converts_model_exception_to_error_state(self):
         # Arrange
         model_factory = MagicMock()
         model = MagicMock()
@@ -241,12 +241,13 @@ class TestExtractNode:
             ),
             "extracted_facts": [],
             "error": None,
+            "retry_count": 0,
         }
 
-        # Act & Assert
-        try:
-            node(state)
-        except RuntimeError as exc:
-            assert str(exc) == "LLM unavailable"
-        else:
-            raise AssertionError("Expected RuntimeError")
+        # Act
+        result = node(state)
+
+        # Assert
+        assert result["extracted_facts"] == []
+        assert result["error"] == "LLM unavailable"
+        assert result["retry_count"] == 1

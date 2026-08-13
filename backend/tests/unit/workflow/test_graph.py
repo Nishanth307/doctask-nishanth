@@ -3,8 +3,11 @@ from uuid import uuid4
 from app.workflow.graph import (
     build_workflow,
     route_after_classify,
+    route_after_examine,
+    route_after_extract,
     route_after_human_review,
     route_after_reconcile,
+    should_retry,
 )
 
 
@@ -126,3 +129,84 @@ class TestWorkflowRouting:
         }
 
         assert route_after_reconcile(state) == "examine"
+
+    def test_should_retry_when_error_and_retries_remaining(self):
+        state = {
+            "error": "LLM unavailable",
+            "retry_count": 1,
+            "max_retries": 3,
+        }
+
+        assert should_retry(state) is True
+
+    def test_should_not_retry_when_no_error(self):
+        state = {
+            "error": None,
+            "retry_count": 1,
+            "max_retries": 3,
+        }
+
+        assert should_retry(state) is False
+
+    def test_should_not_retry_after_max_retries(self):
+        state = {
+            "error": "LLM unavailable",
+            "retry_count": 3,
+            "max_retries": 3,
+        }
+
+        assert should_retry(state) is False
+
+    def test_route_after_extract_on_success(self):
+        state = {
+            "error": None,
+            "retry_count": 0,
+            "max_retries": 3,
+        }
+
+        assert route_after_extract(state) == "reconcile"
+
+    def test_route_after_extract_retries_on_failure(self):
+        state = {
+            "error": "LLM unavailable",
+            "retry_count": 1,
+            "max_retries": 3,
+        }
+
+        assert route_after_extract(state) == "extract"
+
+    def test_route_after_extract_fails_after_max_retries(self):
+        state = {
+            "error": "LLM unavailable",
+            "retry_count": 3,
+            "max_retries": 3,
+        }
+
+        assert route_after_extract(state) == "failed"
+
+    def test_route_after_examine_on_success(self):
+        state = {
+            "error": None,
+            "retry_count": 0,
+            "max_retries": 3,
+        }
+
+        assert route_after_examine(state) == "update"
+
+    def test_route_after_examine_retries_on_failure(self):
+        state = {
+            "error": "LLM unavailable",
+            "retry_count": 1,
+            "max_retries": 3,
+        }
+
+        assert route_after_examine(state) == "examine"
+
+    def test_route_after_examine_fails_after_max_retries(self):
+        state = {
+            "error": "LLM unavailable",
+            "retry_count": 3,
+            "max_retries": 3,
+        }
+
+        assert route_after_examine(state) == "failed"

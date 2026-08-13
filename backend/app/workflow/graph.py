@@ -9,17 +9,54 @@ from app.workflow.nodes.examine import ExamineNode
 from app.workflow.nodes.extract import ExtractNode
 from app.workflow.nodes.human_review import human_review_node
 from app.workflow.nodes.reconcile import ReconcileNode
+from app.workflow.nodes.revise import ReviseNode
 from app.workflow.nodes.update import UpdateNode
 from app.workflow.retry import execute_with_retry
 from app.workflow.state import WorkflowState
 
 
-def revise_node(state: WorkflowState) -> WorkflowState:
-    return state
-
-
 def failed_node(state: WorkflowState) -> WorkflowState:
     return state
+
+
+def should_retry(state: WorkflowState) -> bool:
+    if not state.get("error"):
+        return False
+
+    retry_count = state.get("retry_count", 0)
+    max_retries = state.get("max_retries", 3)
+
+    return retry_count < max_retries
+
+
+def route_after_classify(state: WorkflowState) -> str:
+    if not state.get("error"):
+        return "extract"
+
+    if should_retry(state):
+        return "classify"
+
+    return "failed"
+
+
+def route_after_extract(state: WorkflowState) -> str:
+    if not state.get("error"):
+        return "reconcile"
+
+    if should_retry(state):
+        return "extract"
+
+    return "failed"
+
+
+def route_after_examine(state: WorkflowState) -> str:
+    if not state.get("error"):
+        return "update"
+
+    if should_retry(state):
+        return "examine"
+
+    return "failed"
 
 
 def route_after_reconcile(state: WorkflowState) -> str:
@@ -39,19 +76,6 @@ def route_after_human_review(state: WorkflowState) -> str:
         return "revise"
 
     return "human_review"
-
-
-def route_after_classify(state: WorkflowState) -> str:
-    if state.get("error"):
-        retry_count = state.get("retry_count", 0)
-        max_retries = state.get("max_retries", 3)
-
-        if retry_count < max_retries:
-            return "classify"
-
-        return "failed"
-
-    return "extract"
 
 
 def build_workflow(
@@ -75,12 +99,17 @@ def build_workflow(
 
     reconcile_node = ReconcileNode()
 
-    examine_node = ExamineNode(
+    examine = ExamineNode(
         model_factory=model_factory,
         model_name=ModelName.GEMINI_2_5_FLASH,
     )
 
-    update_node = UpdateNode(repository=repository)
+    revise = ReviseNode(
+        model_factory=model_factory,
+        model_name=ModelName.GEMINI_2_5_FLASH,
+    )
+
+    update = UpdateNode()
 
     def classify_with_retry(state: WorkflowState) -> WorkflowState:
         return execute_with_retry(
@@ -94,9 +123,9 @@ def build_workflow(
     graph.add_node("extract", extract_node)
     graph.add_node("reconcile", reconcile_node)
     graph.add_node("human_review", human_review_node)
-    graph.add_node("revise", revise_node)
-    graph.add_node("examine", examine_node)
-    graph.add_node("update", update_node)
+    graph.add_node("revise", revise)
+    graph.add_node("examine", examine)
+    graph.add_node("update", update)
     graph.add_node("failed", failed_node)
 
     graph.add_edge(START, "classify")
@@ -111,7 +140,15 @@ def build_workflow(
         },
     )
 
-    graph.add_edge("extract", "reconcile")
+    graph.add_conditional_edges(
+        "extract",
+        route_after_extract,
+        {
+            "extract": "extract",
+            "reconcile": "reconcile",
+            "failed": "failed",
+        },
+    )
 
     graph.add_conditional_edges(
         "reconcile",
@@ -134,7 +171,15 @@ def build_workflow(
 
     graph.add_edge("revise", "reconcile")
 
-    graph.add_edge("examine", "update")
+    graph.add_conditional_edges(
+        "examine",
+        route_after_examine,
+        {
+            "examine": "examine",
+            "update": "update",
+            "failed": "failed",
+        },
+    )
     graph.add_edge("update", END)
 
     graph.add_edge("failed", END)

@@ -3,13 +3,18 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.llm.enums import ModelName
-from app.llm.schemas import ExaminationResult
+from app.llm.schemas import (
+    ClassificationResult,
+    DocumentCategory,
+    ExaminationResult,
+)
 from app.workflow.nodes.examine import ExamineNode
 
 
 class TestExamineNode:
 
     def test_examine_success(self):
+        # Arrange
         model_factory = MagicMock()
         model = MagicMock()
         structured_model = MagicMock()
@@ -17,12 +22,14 @@ class TestExamineNode:
         model_factory.create_model.return_value = model
         model.with_structured_output.return_value = structured_model
 
-        structured_model.invoke.return_value = ExaminationResult(
+        examination = ExaminationResult(
             is_valid=True,
             confidence=0.95,
             issues=[],
-            summary="The extracted information is consistent.",
+            summary="The extracted information is valid.",
         )
+
+        structured_model.invoke.return_value = examination
 
         node = ExamineNode(
             model_factory=model_factory,
@@ -35,24 +42,39 @@ class TestExamineNode:
                     "text": "Agreement between ABC Ltd and XYZ Ltd."
                 }
             ],
+            "classification": ClassificationResult(
+                document_type=DocumentCategory.CONTRACT,
+                confidence=0.95,
+                reasoning="Contractual terms are present.",
+            ),
             "extracted_facts": [
                 {
                     "field": "party_a",
                     "value": "ABC Ltd",
                     "confidence": 0.95,
-                }
+                },
+                {
+                    "field": "party_b",
+                    "value": "XYZ Ltd",
+                    "confidence": 0.92,
+                },
             ],
+            "examination": None,
             "error": None,
         }
 
+        # Act
         result = node(state)
 
-        assert result["examination"]["is_valid"] is True
-        assert result["examination"]["confidence"] == 0.95
-        assert result["examination"]["issues"] == []
+        # Assert
+        assert result["examination"] == examination
+        assert result["examination"].is_valid is True
+        assert result["examination"].confidence == 0.95
+        assert result["examination"].issues == []
         assert result["error"] is None
 
     def test_examine_uses_model_factory(self):
+        # Arrange
         model_factory = MagicMock()
         model = MagicMock()
         structured_model = MagicMock()
@@ -73,18 +95,22 @@ class TestExamineNode:
         )
 
         state = {
-            "documents": [{"text": "Document"}],
+            "documents": [{"text": "Some document"}],
+            "classification": None,
             "extracted_facts": [],
             "error": None,
         }
 
+        # Act
         node(state)
 
+        # Assert
         model_factory.create_model.assert_called_once_with(
             ModelName.GEMINI_2_5_FLASH,
         )
 
     def test_examine_uses_structured_output(self):
+        # Arrange
         model_factory = MagicMock()
         model = MagicMock()
         structured_model = MagicMock()
@@ -105,18 +131,22 @@ class TestExamineNode:
         )
 
         state = {
-            "documents": [{"text": "Document"}],
+            "documents": [{"text": "Some document"}],
+            "classification": None,
             "extracted_facts": [],
             "error": None,
         }
 
+        # Act
         node(state)
 
+        # Assert
         model.with_structured_output.assert_called_once_with(
             ExaminationResult,
         )
 
     def test_examine_prompt_contains_document_and_facts(self):
+        # Arrange
         model_factory = MagicMock()
         model = MagicMock()
         structured_model = MagicMock()
@@ -142,6 +172,11 @@ class TestExamineNode:
                     "text": "ABC Ltd signed the agreement."
                 }
             ],
+            "classification": ClassificationResult(
+                document_type=DocumentCategory.CONTRACT,
+                confidence=0.95,
+                reasoning="Contract.",
+            ),
             "extracted_facts": [
                 {
                     "field": "party_a",
@@ -152,15 +187,19 @@ class TestExamineNode:
             "error": None,
         }
 
+        # Act
         node(state)
 
+        # Assert
         prompt = structured_model.invoke.call_args.args[0]
 
+        assert "contract" in prompt
         assert "ABC Ltd signed the agreement." in prompt
         assert "party_a" in prompt
         assert "ABC Ltd" in prompt
 
-    def test_examine_can_return_invalid_result(self):
+    def test_examine_handles_empty_facts(self):
+        # Arrange
         model_factory = MagicMock()
         model = MagicMock()
         structured_model = MagicMock()
@@ -171,8 +210,8 @@ class TestExamineNode:
         structured_model.invoke.return_value = ExaminationResult(
             is_valid=False,
             confidence=0.40,
-            issues=["Party name could not be verified."],
-            summary="The extracted information requires correction.",
+            issues=["No extracted facts were available."],
+            summary="Unable to validate the document.",
         )
 
         node = ExamineNode(
@@ -181,19 +220,22 @@ class TestExamineNode:
         )
 
         state = {
-            "documents": [{"text": "Document"}],
+            "documents": [{"text": "Some document"}],
+            "classification": None,
             "extracted_facts": [],
             "error": None,
         }
 
+        # Act
         result = node(state)
 
-        assert result["examination"]["is_valid"] is False
-        assert result["examination"]["issues"] == [
-            "Party name could not be verified."
-        ]
+        # Assert
+        assert result["examination"].is_valid is False
+        assert len(result["examination"].issues) == 1
+        assert result["error"] is None
 
-    def test_examine_propagates_model_exception(self):
+    def test_examine_converts_model_exception_to_error_state(self):
+        # Arrange
         model_factory = MagicMock()
         model = MagicMock()
         structured_model = MagicMock()
@@ -211,13 +253,15 @@ class TestExamineNode:
         )
 
         state = {
-            "documents": [{"text": "Document"}],
+            "documents": [{"text": "Some document"}],
             "extracted_facts": [],
+            "retry_count": 0,
             "error": None,
         }
 
-        with pytest.raises(
-            RuntimeError,
-            match="LLM unavailable",
-        ):
-            node(state)
+        # Act
+        result = node(state)
+
+        # Assert
+        assert result["error"] == "LLM unavailable"
+        assert result["retry_count"] == 1

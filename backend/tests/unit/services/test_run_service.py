@@ -13,9 +13,25 @@ class TestRunService:
 
     def setup_method(self):
         # Arrange
+        from app.services.workflow_result_service import WorkflowResultService
+        from app.workflow.service import WorkflowService
+
         self.repository = Mock(spec=RunRepository)
         self.repository.create.side_effect = lambda x: x
-        self.service = RunService(self.repository)
+
+        self.workflow_service = Mock(
+            spec=WorkflowService,
+        )
+
+        self.workflow_result_service = Mock(
+            spec=WorkflowResultService,
+        )
+
+        self.service = RunService(
+            repository=self.repository,
+            workflow_service=self.workflow_service,
+            workflow_result_service=self.workflow_result_service,
+        )
 
     def test_create_run_with_valid_name(self):
         # Arrange
@@ -163,7 +179,8 @@ class TestRunService:
         # Assert
         assert result.status == RunStatus.RUNNING
         assert result.stage == WorkflowStage.INGESTION
-        assert result.error_message == "Previous failure"
+        assert result.error_message is None
+        assert result.completed_at is None
 
     def test_complete_run(self):
         # Arrange
@@ -179,6 +196,24 @@ class TestRunService:
         # Assert
         assert result is run
         assert result.status == RunStatus.COMPLETED
+        assert result.stage == WorkflowStage.COMMIT
+        assert result.completed_at is not None
+
+    def test_wait_for_review(self):
+        # Arrange
+        run = Run(
+            name="Contract Review",
+            status=RunStatus.RUNNING,
+            stage=WorkflowStage.RECONCILIATION,
+        )
+
+        # Act
+        result = self.service.wait_for_review(run)
+
+        # Assert
+        assert result is run
+        assert result.status == RunStatus.WAITING_FOR_REVIEW
+        assert result.stage == WorkflowStage.REVIEW
 
     def test_fail_run(self):
         # Arrange
@@ -216,130 +251,134 @@ class TestRunService:
         assert result.status == RunStatus.FAILED
         assert result.error_message == ""
 
-    def test_start_workflow(self):
-        # Arrange
-        workflow_service = Mock()
-
-        workflow_service.start.return_value = {
-            "thread_id": "thread-123",
-            "state": {
-                "status": "completed",
-            },
-        }
-
-        service = RunService(
-            self.repository,
-            workflow_service=workflow_service,
-        )
-
-        run_id = uuid4()
-
+    def test_start_workflow_completes_run(self):
         run = Run(
-            id=run_id,
             name="Contract Review",
             status=RunStatus.PENDING,
             stage=WorkflowStage.INGESTION,
         )
 
-        # Act
-        result = service.start_workflow(run)
-
-        # Assert
-        assert result["thread_id"] == "thread-123"
-        assert result["state"]["status"] == "completed"
-
-        assert run.status == RunStatus.RUNNING
-        assert run.stage == WorkflowStage.INGESTION
-
-        workflow_service.start.assert_called_once_with(
-            state={
-                "run_id": run_id,
-                "retry_count": 0,
-                "max_retries": 3,
-                "human_review_required": False,
-                "human_decision": None,
-                "error": None,
-            },
-            thread_id=str(run_id),
-        )
-
-    def test_resume_workflow_with_approval(self):
-        # Arrange
-        workflow_service = Mock()
-
-        workflow_service.resume.return_value = {
+        workflow_result = {
             "thread_id": "thread-123",
             "state": {
-                "human_decision": "approve",
+                "status": "completed",
+                "classification": {},
+                "extracted_facts": [],
+                "human_review_required": False,
             },
         }
 
-        service = RunService(
-            self.repository,
-            workflow_service=workflow_service,
+        self.workflow_service.start.return_value = workflow_result
+
+        result = self.service.start_workflow(run)
+
+        assert result == workflow_result
+        assert run.thread_id == "thread-123"
+        assert run.status == RunStatus.COMPLETED
+
+        self.workflow_service.start.assert_called_once()
+
+        self.workflow_result_service.create_result.assert_called_once_with(
+            run_id=run.id,
+            state=workflow_result["state"],
         )
 
-        run_id = uuid4()
-
+    def test_start_workflow_waits_for_human_review(self):
         run = Run(
-            id=run_id,
             name="Contract Review",
-            status=RunStatus.RUNNING,
-            stage=WorkflowStage.RECONCILIATION,
+            status=RunStatus.PENDING,
+            stage=WorkflowStage.INGESTION,
         )
 
-        # Act
-        result = service.resume_workflow(
+        workflow_result = {
+            "thread_id": "thread-123",
+            "state": {
+                "human_review_required": True,
+                "status": None,
+            },
+        }
+
+        self.workflow_service.start.return_value = workflow_result
+
+        result = self.service.start_workflow(run)
+
+        assert result == workflow_result
+        assert run.thread_id == "thread-123"
+        assert run.status == RunStatus.WAITING_FOR_REVIEW
+        assert run.stage == WorkflowStage.REVIEW
+
+        self.workflow_result_service.create_result.assert_not_called()
+
+    def test_resume_workflow_completes_run(self):
+        run = Run(
+            name="Contract Review",
+            status=RunStatus.WAITING_FOR_REVIEW,
+            stage=WorkflowStage.REVIEW,
+            thread_id="thread-123",
+        )
+
+        workflow_result = {
+            "thread_id": "thread-123",
+            "state": {
+                "status": "completed",
+                "human_decision": "approve",
+                "human_review_required": True,
+            },
+        }
+
+        self.workflow_service.resume.return_value = workflow_result
+
+        result = self.service.resume_workflow(
             run,
             "approve",
         )
 
-        # Assert
-        assert result["state"]["human_decision"] == "approve"
+        assert result == workflow_result
+        assert run.status == RunStatus.COMPLETED
+        assert run.stage == WorkflowStage.COMMIT
 
-        workflow_service.resume.assert_called_once_with(
-            thread_id=str(run_id),
+        self.workflow_service.resume.assert_called_once_with(
+            thread_id="thread-123",
             decision="approve",
         )
 
-    def test_resume_workflow_with_rejection(self):
-        # Arrange
-        workflow_service = Mock()
-
-        workflow_service.resume.return_value = {
-            "thread_id": "thread-123",
-            "state": {
-                "human_decision": "reject",
-            },
-        }
-
-        service = RunService(
-            self.repository,
-            workflow_service=workflow_service,
+        self.workflow_result_service.create_result.assert_called_once_with(
+            run_id=run.id,
+            state=workflow_result["state"],
         )
 
-        run_id = uuid4()
-
+    def test_resume_workflow_requires_thread_id(self):
         run = Run(
-            id=run_id,
+            name="Contract Review",
+            status=RunStatus.WAITING_FOR_REVIEW,
+            stage=WorkflowStage.REVIEW,
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="Run does not have a workflow thread",
+        ):
+            self.service.resume_workflow(
+                run,
+                "approve",
+            )
+
+    def test_resume_workflow_requires_waiting_status(self):
+        run = Run(
             name="Contract Review",
             status=RunStatus.RUNNING,
-            stage=WorkflowStage.RECONCILIATION,
+            stage=WorkflowStage.EXAMINATION,
+            thread_id="thread-123",
         )
 
-        # Act
-        result = service.resume_workflow(
-            run,
-            "reject",
-        )
-
-        # Assert
-        assert result["state"]["human_decision"] == "reject"
-
-        workflow_service.resume.assert_called_once_with(
-            thread_id=str(run_id),
-            decision="reject",
-        )
+        with pytest.raises(
+            ValueError,
+            match="Run is not waiting for human review",
+        ):
+            self.service.resume_workflow(
+                run,
+                "approve",
+            )
 
     def test_start_workflow_without_workflow_service(self):
         # Arrange
@@ -349,13 +388,14 @@ class TestRunService:
             status=RunStatus.PENDING,
             stage=WorkflowStage.INGESTION,
         )
+        service_without_workflow = RunService(self.repository)
 
         # Act / Assert
         with pytest.raises(
             RuntimeError,
             match="WorkflowService is not configured",
         ):
-            self.service.start_workflow(run)
+            service_without_workflow.start_workflow(run)
 
     def test_resume_workflow_without_workflow_service(self):
         # Arrange
@@ -365,13 +405,14 @@ class TestRunService:
             status=RunStatus.RUNNING,
             stage=WorkflowStage.RECONCILIATION,
         )
+        service_without_workflow = RunService(self.repository)
 
         # Act / Assert
         with pytest.raises(
             RuntimeError,
             match="WorkflowService is not configured",
         ):
-            self.service.resume_workflow(
+            service_without_workflow.resume_workflow(
                 run,
                 "approve",
             )

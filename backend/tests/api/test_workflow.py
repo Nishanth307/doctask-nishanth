@@ -120,7 +120,7 @@ class TestWorkflowGraph:
         assert result["classification"] is not None
         assert result["extracted_facts"]
         assert result["human_review_required"] is False
-        assert result["examination"]["is_valid"] is True
+        assert result["examination"].is_valid is True
         assert result["status"] == "completed"
 
     def test_classification_retry(

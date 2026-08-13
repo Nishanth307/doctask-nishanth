@@ -1,31 +1,115 @@
-from unittest.mock import MagicMock
-from uuid import uuid4
-
+from app.llm.schemas import ExaminationResult
 from app.workflow.nodes.update import UpdateNode
 
 
 class TestUpdateNode:
 
-    def test_update_persists_workflow_result(self):
+    def test_update_success(self):
         # Arrange
-        repository = MagicMock()
+        node = UpdateNode()
 
-        result_id = uuid4()
-
-        persisted_result = MagicMock()
-        persisted_result.id = result_id
-
-        repository.create.return_value = persisted_result
-
-        node = UpdateNode(repository)
-
-        run_id = uuid4()
+        examination = ExaminationResult(
+            is_valid=True,
+            confidence=0.95,
+            issues=[],
+            summary="The document is valid.",
+        )
 
         state = {
-            "run_id": run_id,
+            "run_id": "run-123",
+            "examination": examination,
+            "status": None,
+            "updates": [],
+            "error": None,
+        }
+
+        # Act
+        result = node(state)
+
+        # Assert
+        assert result["status"] == "completed"
+        assert result["error"] is None
+
+        assert result["updates"]["status"] == "completed"
+        assert result["updates"]["examination_valid"] is True
+        assert result["updates"]["examination_confidence"] == 0.95
+        assert result["updates"]["issues"] == []
+        assert result["updates"]["summary"] == (
+            "The document is valid."
+        )
+
+    def test_update_with_examination_issues(self):
+        # Arrange
+        node = UpdateNode()
+
+        examination = ExaminationResult(
+            is_valid=False,
+            confidence=0.72,
+            issues=[
+                "Party name does not match.",
+                "Contract date is missing.",
+            ],
+            summary="The document contains issues.",
+        )
+
+        state = {
+            "examination": examination,
+            "error": None,
+        }
+
+        # Act
+        result = node(state)
+
+        # Assert
+        assert result["status"] == "completed"
+        assert result["updates"]["examination_valid"] is False
+        assert result["updates"]["examination_confidence"] == 0.72
+
+        assert result["updates"]["issues"] == [
+            "Party name does not match.",
+            "Contract date is missing.",
+        ]
+
+        assert result["updates"]["summary"] == (
+            "The document contains issues."
+        )
+
+    def test_update_fails_when_examination_is_missing(self):
+        # Arrange
+        node = UpdateNode()
+
+        state = {
+            "run_id": "run-123",
+            "examination": None,
+            "status": None,
+            "error": None,
+        }
+
+        # Act
+        result = node(state)
+
+        # Assert
+        assert result["status"] == "failed"
+        assert result["error"] == (
+            "Examination result is missing"
+        )
+
+    def test_update_preserves_existing_state(self):
+        # Arrange
+        node = UpdateNode()
+
+        examination = ExaminationResult(
+            is_valid=True,
+            confidence=0.90,
+            issues=[],
+            summary="Valid document.",
+        )
+
+        state = {
+            "run_id": "run-123",
+            "human_decision": "approve",
             "classification": {
                 "document_type": "contract",
-                "confidence": 0.95,
             },
             "extracted_facts": [
                 {
@@ -34,14 +118,7 @@ class TestUpdateNode:
                     "confidence": 0.95,
                 }
             ],
-            "human_review_required": False,
-            "examination": {
-                "is_valid": True,
-                "confidence": 0.95,
-                "issues": [],
-                "summary": "Valid.",
-            },
-            "human_decision": None,
+            "examination": examination,
             "error": None,
         }
 
@@ -49,106 +126,7 @@ class TestUpdateNode:
         result = node(state)
 
         # Assert
-        repository.create.assert_called_once()
-
-        persisted = repository.create.call_args.args[0]
-
-        assert persisted.run_id == run_id
-        assert persisted.status == "completed"
-        assert persisted.classification == state["classification"]
-        assert persisted.extracted_facts == state["extracted_facts"]
-        assert persisted.examination == state["examination"]
-
-        assert result["status"] == "completed"
-        assert result["result_id"] == result_id
-        assert result["error"] is None
-
-    def test_update_persists_human_decision(self):
-        # Arrange
-        repository = MagicMock()
-
-        persisted_result = MagicMock()
-        persisted_result.id = uuid4()
-
-        repository.create.return_value = persisted_result
-
-        node = UpdateNode(repository)
-
-        state = {
-            "run_id": uuid4(),
-            "classification": {},
-            "extracted_facts": [],
-            "human_review_required": True,
-            "human_decision": "approve",
-            "examination": {
-                "is_valid": True,
-                "confidence": 0.90,
-                "issues": [],
-                "summary": "Approved after review.",
-            },
-            "error": None,
-        }
-
-        # Act
-        node(state)
-
-        # Assert
-        persisted = repository.create.call_args.args[0]
-
-        assert persisted.human_decision == "approve"
-
-    def test_update_sets_completed_status(self):
-        # Arrange
-        repository = MagicMock()
-
-        persisted_result = MagicMock()
-        persisted_result.id = uuid4()
-
-        repository.create.return_value = persisted_result
-
-        node = UpdateNode(repository)
-
-        state = {
-            "run_id": uuid4(),
-            "classification": {},
-            "extracted_facts": [],
-            "human_review_required": False,
-            "examination": {},
-            "human_decision": None,
-            "error": None,
-        }
-
-        # Act
-        result = node(state)
-
-        # Assert
-        assert result["status"] == "completed"
-
-    def test_update_propagates_repository_exception(self):
-        # Arrange
-        repository = MagicMock()
-        repository.create.side_effect = RuntimeError(
-            "Database unavailable"
-        )
-
-        node = UpdateNode(repository)
-
-        state = {
-            "run_id": uuid4(),
-            "classification": {},
-            "extracted_facts": [],
-            "human_review_required": False,
-            "examination": {},
-            "human_decision": None,
-            "error": None,
-        }
-
-        # Act & Assert
-        try:
-            node(state)
-        except RuntimeError as exc:
-            assert str(exc) == "Database unavailable"
-        else:
-            raise AssertionError(
-                "Expected RuntimeError"
-            )
+        assert result["run_id"] == "run-123"
+        assert result["human_decision"] == "approve"
+        assert result["classification"]["document_type"] == "contract"
+        assert len(result["extracted_facts"]) == 1

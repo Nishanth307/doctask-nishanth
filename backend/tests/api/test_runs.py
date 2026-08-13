@@ -155,3 +155,24 @@ class TestRunRoutes:
 
         assert response.status_code == 404
         assert response.json()["detail"] == "Run not found"
+
+    def test_submit_decision_when_run_not_waiting(self):
+        run_id = uuid4()
+        run = create_mock_run(run_id)
+
+        self.service.get_run.return_value = run
+        self.service.resume_workflow.side_effect = ValueError(
+            "Run is not waiting for human review"
+        )
+
+        response = self.client.post(
+            f"/api/v1/runs/{run_id}/decision",
+            json={
+                "decision": "approve",
+            },
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == (
+            "Run is not waiting for human review"
+        )

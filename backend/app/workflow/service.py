@@ -1,14 +1,24 @@
-from typing import Any
-from uuid import uuid4
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+from uuid import UUID, uuid4
 
 from langgraph.types import Command
+
+if TYPE_CHECKING:
+    from app.services.workflow_result_service import WorkflowResultService
 
 from app.workflow.graph import build_workflow
 
 
 class WorkflowService:
-    def __init__(self, graph=None) -> None:
+    def __init__(
+        self,
+        graph=None,
+        result_service: "WorkflowResultService" | None = None,
+    ) -> None:
         self.graph = graph or build_workflow()
+        self.result_service = result_service
 
     def start(
         self,
@@ -69,3 +79,18 @@ class WorkflowService:
         }
 
         return self.graph.get_state(config)
+
+    def persist_result(
+        self,
+        run_id: UUID,
+        state: dict[str, Any],
+    ):
+        if self.result_service is None:
+            raise RuntimeError(
+                "WorkflowResultService is not configured"
+            )
+
+        return self.result_service.create_result(
+            run_id=run_id,
+            state=state,
+        )

@@ -174,7 +174,7 @@ def test_start_workflow(client_fixture, mock_run_service):
     run_id = create_response.json()["id"]
 
     mock_run_service.start.return_value = {
-        "thread_id": "thread-123",
+        "thread_id": f"thread-{run_id}",
         "state": {
             "status": "running",
         },
@@ -183,7 +183,7 @@ def test_start_workflow(client_fixture, mock_run_service):
     response = client_fixture.post(f"/api/v1/runs/{run_id}/start")
     assert response.status_code == 200
     body = response.json()
-    assert body["thread_id"] == "thread-123"
+    assert body["thread_id"] == f"thread-{run_id}"
     assert body["state"]["status"] == "running"
     mock_run_service.start.assert_called_once()
     _, kwargs = mock_run_service.start.call_args
@@ -197,15 +197,20 @@ def test_start_workflow_run_not_found(client_fixture, mock_run_service):
     assert response.json()["detail"] == "Run not found"
 
 
-def test_submit_approve_decision(client_fixture, mock_run_service):
+def test_submit_approve_decision(client_fixture, mock_run_service, db_session):
     create_response = client_fixture.post(
         "/api/v1/runs",
         json={"name": "Test Run"},
     )
     run_id = create_response.json()["id"]
 
+    run = db_session.query(Run).filter(Run.id == run_id).first()
+    run.status = RunStatus.WAITING_FOR_REVIEW
+    run.thread_id = f"thread-{run_id}"
+    db_session.commit()
+
     mock_run_service.resume.return_value = {
-        "thread_id": "thread-123",
+        "thread_id": f"thread-{run_id}",
         "state": {
             "human_decision": "approve",
         },
@@ -217,23 +222,28 @@ def test_submit_approve_decision(client_fixture, mock_run_service):
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["thread_id"] == "thread-123"
+    assert body["thread_id"] == f"thread-{run_id}"
     assert body["state"]["human_decision"] == "approve"
     mock_run_service.resume.assert_called_once_with(
-        thread_id=str(run_id),
+        thread_id=f"thread-{run_id}",
         decision="approve",
     )
 
 
-def test_submit_reject_decision(client_fixture, mock_run_service):
+def test_submit_reject_decision(client_fixture, mock_run_service, db_session):
     create_response = client_fixture.post(
         "/api/v1/runs",
         json={"name": "Test Run"},
     )
     run_id = create_response.json()["id"]
 
+    run = db_session.query(Run).filter(Run.id == run_id).first()
+    run.status = RunStatus.WAITING_FOR_REVIEW
+    run.thread_id = f"thread-{run_id}"
+    db_session.commit()
+
     mock_run_service.resume.return_value = {
-        "thread_id": "thread-123",
+        "thread_id": f"thread-{run_id}",
         "state": {
             "human_decision": "reject",
         },
@@ -245,10 +255,10 @@ def test_submit_reject_decision(client_fixture, mock_run_service):
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["thread_id"] == "thread-123"
+    assert body["thread_id"] == f"thread-{run_id}"
     assert body["state"]["human_decision"] == "reject"
     mock_run_service.resume.assert_called_once_with(
-        thread_id=str(run_id),
+        thread_id=f"thread-{run_id}",
         decision="reject",
     )
 

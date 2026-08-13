@@ -13,53 +13,85 @@ class ExamineNode:
         self.model_factory = model_factory
         self.model_name = model_name
 
-    def __call__(self, state: WorkflowState) -> WorkflowState:
-        model = self.model_factory.create_model(
-            self.model_name,
-        )
+    def __call__(
+        self,
+        state: WorkflowState,
+    ) -> WorkflowState:
+        retry_count = state.get("retry_count", 0)
 
-        structured_model = model.with_structured_output(
-            ExaminationResult,
-        )
+        try:
+            model = self.model_factory.create_model(
+                self.model_name,
+            )
 
-        document_text = "\n\n".join(
-            document.get("text", "")
-            for document in state.get("documents", [])
-        )
+            structured_model = model.with_structured_output(
+                ExaminationResult,
+            )
 
-        extracted_facts = state.get(
-            "extracted_facts",
-            [],
-        )
+            classification = state.get("classification")
 
-        prompt = f"""
-You are a document validation and examination system.
+            document_type = (
+                classification.document_type
+                if classification
+                else "other"
+            )
 
-Review the extracted information against the source document.
+            extracted_facts = state.get(
+                "extracted_facts",
+                [],
+            )
 
-Determine:
-- whether the extracted information is valid
-- confidence between 0 and 1
-- any issues
-- a concise summary
+            document_text = "\n\n".join(
+                document.get("text", "")
+                for document in state.get("documents", [])
+            )
 
-Do not invent information.
+            prompt = f"""
+You are a document examination system.
 
-Source document:
+Evaluate the extracted information from the document.
+
+Document type:
+
+{document_type}
+
+Original document:
 
 {document_text}
 
-Extracted information:
+Extracted facts:
 
 {extracted_facts}
+
+Determine whether the extracted information is valid and
+consistent with the document.
+
+Return:
+- is_valid: whether the extracted information is valid
+- confidence: confidence between 0 and 1
+- issues: a list of specific issues found
+- summary: a concise examination summary
+
+Do not invent information.
+Only make conclusions supported by the document and
+the extracted facts.
+
+Return an examination result.
 """
 
-        result: ExaminationResult = structured_model.invoke(
-            prompt,
-        )
+            result: ExaminationResult = (
+                structured_model.invoke(prompt)
+            )
 
-        return {
-            **state,
-            "examination": result.model_dump(),
-            "error": None,
-        }
+            return {
+                **state,
+                "examination": result,
+                "error": None,
+            }
+
+        except Exception as exc:
+            return {
+                **state,
+                "retry_count": retry_count + 1,
+                "error": str(exc),
+            }
