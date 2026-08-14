@@ -4,17 +4,28 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.persistence.repositories.finding import FindingRepository
+from app.persistence.repositories.report import ReportRepository
 from app.persistence.repositories.run import RunRepository
+from app.persistence.repositories.workflow_event import (
+    WorkflowEventRepository,
+)
 from app.persistence.repositories.workflow_result import (
     WorkflowResultRepository,
 )
 from app.schemas.run import (
     HumanDecisionRequest,
+    ReviewResponse,
     RunCreate,
+    RunDetailsResponse,
     RunResponse,
+    WorkflowEventResponse,
     WorkflowRunResponse,
 )
 from app.services.run_service import RunService
+from app.services.workflow_event_service import (
+    WorkflowEventService,
+)
 from app.services.workflow_result_service import (
     WorkflowResultService,
 )
@@ -30,18 +41,29 @@ def get_run_service(
     db: Session = Depends(get_db),  # noqa: B008
 ) -> RunService:
     run_repository = RunRepository(db)
-
     workflow_service = WorkflowService()
-
+    finding_repository = FindingRepository(db)
+    report_repository = ReportRepository(db)
+    workflow_event_repository = WorkflowEventRepository(db)
     workflow_result_repository = WorkflowResultRepository(db)
+
     workflow_result_service = WorkflowResultService(
         workflow_result_repository,
+    )
+
+    workflow_event_service = WorkflowEventService(
+        workflow_event_repository,
     )
 
     return RunService(
         repository=run_repository,
         workflow_service=workflow_service,
         workflow_result_service=workflow_result_service,
+        workflow_event_service=workflow_event_service,
+        finding_repository=finding_repository,
+        report_repository=report_repository,
+        workflow_event_repository=workflow_event_repository,
+        workflow_result_repository=workflow_result_repository,
     )
 
 
@@ -181,3 +203,75 @@ def submit_human_decision(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Workflow could not be resumed",
         ) from exc
+
+
+@router.get(
+    "/{run_id}/events",
+    response_model=list[WorkflowEventResponse],
+)
+def get_workflow_events(
+    run_id: UUID,
+    db: Session = Depends(get_db),  # noqa: B008
+    service: RunService = Depends(get_run_service),  # noqa: B008
+) -> list[WorkflowEventResponse]:
+
+    run = service.get_run(run_id)
+
+    if run is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Run not found",
+        )
+
+    repository = WorkflowEventRepository(db)
+    service = WorkflowEventService(repository)
+
+    return service.get_events(run_id)
+
+
+@router.get(
+    "/{run_id}/details",
+    response_model=RunDetailsResponse,
+)
+def get_run_details(
+    run_id: UUID,
+    db: Session = Depends(get_db),  # noqa: B008
+    service: RunService = Depends(get_run_service),  # noqa: B008
+) -> RunDetailsResponse:
+
+    result = service.get_run_details(run_id)
+
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Run not found",
+        )
+
+    return RunDetailsResponse(
+        run=result["run"],
+        findings=result["findings"],
+        report=result["report"],
+        workflow_events=result["workflow_events"],
+        workflow_result=result["workflow_result"],
+    )
+
+
+@router.get(
+    "/{run_id}/review",
+    response_model=ReviewResponse,
+)
+def get_review(
+    run_id: UUID,
+    db: Session = Depends(get_db),  # noqa: B008
+    service: RunService = Depends(get_run_service),  # noqa: B008
+) -> ReviewResponse:
+
+    result = service.get_review(run_id)
+
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Run not found",
+        )
+
+    return ReviewResponse(**result)

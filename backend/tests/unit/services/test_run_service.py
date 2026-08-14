@@ -12,7 +12,11 @@ from app.services.run_service import RunService
 class TestRunService:
 
     def setup_method(self):
-        # Arrange
+        from app.persistence.repositories.finding import FindingRepository
+        from app.persistence.repositories.report import ReportRepository
+        from app.persistence.repositories.workflow_event import WorkflowEventRepository
+        from app.persistence.repositories.workflow_result import WorkflowResultRepository
+        from app.services.workflow_event_service import WorkflowEventService
         from app.services.workflow_result_service import WorkflowResultService
         from app.workflow.service import WorkflowService
 
@@ -27,10 +31,24 @@ class TestRunService:
             spec=WorkflowResultService,
         )
 
+        self.workflow_event_service = Mock(
+            spec=WorkflowEventService,
+        )
+
+        self.finding_repository = Mock(spec=FindingRepository)
+        self.report_repository = Mock(spec=ReportRepository)
+        self.workflow_event_repository = Mock(spec=WorkflowEventRepository)
+        self.workflow_result_repository = Mock(spec=WorkflowResultRepository)
+
         self.service = RunService(
             repository=self.repository,
             workflow_service=self.workflow_service,
             workflow_result_service=self.workflow_result_service,
+            workflow_event_service=self.workflow_event_service,
+            finding_repository=self.finding_repository,
+            report_repository=self.report_repository,
+            workflow_event_repository=self.workflow_event_repository,
+            workflow_result_repository=self.workflow_result_repository,
         )
 
     def test_create_run_with_valid_name(self):
@@ -416,3 +434,237 @@ class TestRunService:
                 run,
                 "approve",
             )
+
+    def test_start_workflow_records_started_event(self):
+        run = Run(
+            id=uuid4(),
+            name="Contract Review",
+            status=RunStatus.PENDING,
+            stage=WorkflowStage.INGESTION,
+        )
+
+        self.workflow_service.start.return_value = {
+            "thread_id": "thread-123",
+            "state": {
+                "status": "completed",
+            },
+        }
+
+        self.service.start_workflow(run)
+
+        self.workflow_event_service.record.assert_any_call(
+            run_id=run.id,
+            stage=WorkflowStage.INGESTION,
+            status="started",
+            message="Workflow started",
+        )
+
+    def test_start_workflow_records_review_event(self):
+        run = Run(
+            id=uuid4(),
+            name="Contract Review",
+            status=RunStatus.PENDING,
+            stage=WorkflowStage.INGESTION,
+        )
+
+        self.workflow_service.start.return_value = {
+            "thread_id": "thread-123",
+            "state": {
+                "human_review_required": True,
+            },
+        }
+
+        self.service.start_workflow(run)
+
+        self.workflow_event_service.record.assert_any_call(
+            run_id=run.id,
+            stage=WorkflowStage.REVIEW,
+            status="waiting",
+            message="Workflow is waiting for human review",
+        )
+
+        assert run.status == RunStatus.WAITING_FOR_REVIEW
+
+    def test_start_workflow_records_completion_event(self):
+        run = Run(
+            id=uuid4(),
+            name="Contract Review",
+            status=RunStatus.PENDING,
+            stage=WorkflowStage.INGESTION,
+        )
+
+        self.workflow_service.start.return_value = {
+            "thread_id": "thread-123",
+            "state": {
+                "status": "completed",
+            },
+        }
+
+        self.service.start_workflow(run)
+
+        self.workflow_event_service.record.assert_any_call(
+            run_id=run.id,
+            stage=WorkflowStage.COMMIT,
+            status="completed",
+            message="Workflow completed successfully",
+        )
+
+    def test_start_workflow_records_failure_event(self):
+        run = Run(
+            id=uuid4(),
+            name="Contract Review",
+            status=RunStatus.PENDING,
+            stage=WorkflowStage.INGESTION,
+        )
+
+        self.workflow_service.start.return_value = {
+            "thread_id": "thread-123",
+            "state": {
+                "status": "failed",
+                "error": "Classification failed",
+            },
+        }
+
+        self.service.start_workflow(run)
+
+        self.workflow_event_service.record.assert_any_call(
+            run_id=run.id,
+            stage=WorkflowStage.INGESTION,
+            status="failed",
+            message="Classification failed",
+        )
+
+        assert run.status == RunStatus.FAILED
+
+    def test_resume_workflow_records_human_decision(self):
+        run = Run(
+            id=uuid4(),
+            name="Contract Review",
+            status=RunStatus.WAITING_FOR_REVIEW,
+            stage=WorkflowStage.REVIEW,
+            thread_id="thread-123",
+        )
+
+        self.workflow_service.resume.return_value = {
+            "thread_id": "thread-123",
+            "state": {
+                "status": "completed",
+            },
+        }
+
+        self.service.resume_workflow(
+            run,
+            "approve",
+        )
+
+        self.workflow_event_service.record.assert_any_call(
+            run_id=run.id,
+            stage=WorkflowStage.REVIEW,
+            status="decision",
+            message="Human decision: approve",
+        )
+
+    def test_get_run_details_returns_aggregated_data(self):
+        # Arrange
+        run_id = uuid4()
+        run = Run(id=run_id, name="Test Run")
+        self.repository.get_by_id.return_value = run
+
+        findings = [Mock()]
+        report = Mock()
+        events = [Mock()]
+        result = Mock()
+
+        self.finding_repository.get_by_run_id.return_value = findings
+        self.report_repository.get_by_run_id.return_value = report
+        self.workflow_event_repository.get_by_run_id.return_value = events
+        self.workflow_result_repository.get_by_run_id.return_value = result
+
+        # Act
+        details = self.service.get_run_details(run_id)
+
+        # Assert
+        assert details is not None
+        assert details["run"] is run
+        assert details["findings"] == findings
+        assert details["report"] is report
+        assert details["workflow_events"] == events
+        assert details["workflow_result"] is result
+
+        self.repository.get_by_id.assert_called_once_with(run_id)
+        self.finding_repository.get_by_run_id.assert_called_once_with(run_id)
+        self.report_repository.get_by_run_id.assert_called_once_with(run_id)
+        self.workflow_event_repository.get_by_run_id.assert_called_once_with(run_id)
+        self.workflow_result_repository.get_by_run_id.assert_called_once_with(run_id)
+
+    def test_get_run_details_returns_none_when_run_not_found(self):
+        # Arrange
+        run_id = uuid4()
+        self.repository.get_by_id.return_value = None
+
+        # Act
+        details = self.service.get_run_details(run_id)
+
+        # Assert
+        assert details is None
+        self.repository.get_by_id.assert_called_once_with(run_id)
+
+    def test_get_review_success_requires_review_true(self):
+        # Arrange
+        run_id = uuid4()
+        run = Run(
+            id=run_id,
+            name="Test Run",
+            status=RunStatus.WAITING_FOR_REVIEW,
+            stage=WorkflowStage.REVIEW,
+        )
+        self.repository.get_by_id.return_value = run
+
+        findings = [Mock()]
+        self.finding_repository.get_pending_reviews.return_value = findings
+
+        # Act
+        review = self.service.get_review(run_id)
+
+        # Assert
+        assert review is not None
+        assert review["run_id"] == run_id
+        assert review["status"] == RunStatus.WAITING_FOR_REVIEW
+        assert review["stage"] == WorkflowStage.REVIEW
+        assert review["requires_review"] is True
+        assert review["findings"] == findings
+
+        self.repository.get_by_id.assert_called_once_with(run_id)
+        self.finding_repository.get_pending_reviews.assert_called_once_with(run_id)
+
+    def test_get_review_requires_review_false(self):
+        # Arrange
+        run_id = uuid4()
+        run = Run(
+            id=run_id,
+            name="Test Run",
+            status=RunStatus.RUNNING,
+            stage=WorkflowStage.INGESTION,
+        )
+        self.repository.get_by_id.return_value = run
+
+        self.finding_repository.get_pending_reviews.return_value = []
+
+        # Act
+        review = self.service.get_review(run_id)
+
+        # Assert
+        assert review is not None
+        assert review["requires_review"] is False
+
+    def test_get_review_returns_none_when_run_not_found(self):
+        # Arrange
+        run_id = uuid4()
+        self.repository.get_by_id.return_value = None
+
+        # Act
+        review = self.service.get_review(run_id)
+
+        # Assert
+        assert review is None
+        self.repository.get_by_id.assert_called_once_with(run_id)
