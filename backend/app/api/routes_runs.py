@@ -67,6 +67,17 @@ def get_run_service(
     )
 
 
+@router.get(
+    "",
+    response_model=list[RunResponse],
+)
+def get_runs(
+    db: Session = Depends(get_db),  # noqa: B008
+    service: RunService = Depends(get_run_service),  # noqa: B008
+) -> list[RunResponse]:
+    return service.get_runs()
+
+
 @router.post(
     "",
     response_model=RunResponse,

@@ -668,3 +668,15 @@ class TestRunService:
         # Assert
         assert review is None
         self.repository.get_by_id.assert_called_once_with(run_id)
+
+    def test_get_runs_returns_all_runs(self):
+        # Arrange
+        expected_runs = [Mock(), Mock()]
+        self.repository.get_all.return_value = expected_runs
+
+        # Act
+        runs = self.service.get_runs()
+
+        # Assert
+        assert runs == expected_runs
+        self.repository.get_all.assert_called_once()

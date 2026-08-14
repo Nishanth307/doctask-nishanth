@@ -436,3 +436,14 @@ class TestRunRoutes:
 
         assert response.status_code == 404
         assert response.json()["detail"] == "Run not found"
+
+    def test_get_runs(self):
+        run = create_mock_run()
+        self.service.get_runs.return_value = [run]
+
+        response = self.client.get("/api/v1/runs")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body) == 1
+        assert body[0]["name"] == run.name

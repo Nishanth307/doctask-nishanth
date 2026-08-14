@@ -302,3 +302,6 @@ class RunService:
             run.status = RunStatus.RUNNING
 
         return result
+
+    def get_runs(self) -> list[Run]:
+        return self.repository.get_all()

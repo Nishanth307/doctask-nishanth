@@ -22,6 +22,14 @@ class RunRepository(BaseRepository[Run]):
     def get_with_documents(self, run_id: UUID) -> Run | None:
         return self.db.get(Run, run_id)
 
+    def get_all(self) -> list[Run]:
+        statement = (
+            select(Run)
+            .order_by(Run.created_at.desc())
+        )
+
+        return list(self.db.scalars(statement).all())
+
 
 # The repository knows how to query Run, but it doesn't know why you're running the workflow.
 # That's the service's responsibility.
