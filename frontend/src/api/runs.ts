@@ -1,4 +1,4 @@
-import { apiRequest } from "./client";
+import { apiClient } from "./client";
 
 import type {
     HumanDecisionRequest,
@@ -10,24 +10,24 @@ import type {
 } from "./types";
 
 export function getRuns(): Promise<RunResponse[]> {
-    return apiRequest<RunResponse[]>("/runs");
+    return apiClient<RunResponse[]>("/runs");
 }
 
 export function createRun(payload: RunCreate): Promise<RunResponse>{
-    return apiRequest<RunResponse>("/runs",{
+    return  apiClient<RunResponse>("/runs",{
         method: "POST",
         body: JSON.stringify(payload),
     });
 }
 
 export function getRun(runId: string): Promise<RunResponse> {
-    return apiRequest<RunResponse>(`/runs/${runId}`);
+    return apiClient<RunResponse>(`/runs/${runId}`);
 }
 
 export function getRunDetails(
     runId: string,
 ): Promise<RunDetailsResponse> {
-    return apiRequest<RunDetailsResponse>(
+    return apiClient<RunDetailsResponse>(
         `/runs/${runId}/details`,
     );
 }
@@ -35,7 +35,7 @@ export function getRunDetails(
 export function startRun(
     runId: string,
 ): Promise<WorkflowRunResponse> {
-    return apiRequest<WorkflowRunResponse>(
+    return apiClient<WorkflowRunResponse>(
         `/runs/${runId}/start`,
         {
             method: "POST"
@@ -46,14 +46,14 @@ export function startRun(
 export function getRunReview(
     runId: string,
 ): Promise<ReviewResponse> {
-    return apiRequest<ReviewResponse>(`/runs/${runId}/review`);
+    return apiClient<ReviewResponse>(`/runs/${runId}/review`);
 }
 
 export function submitHumanDecision(
     runId: string,
     payload: HumanDecisionRequest,
 ): Promise<WorkflowRunResponse> {
-    return apiRequest<WorkflowRunResponse>(
+    return apiClient<WorkflowRunResponse>(
         `/runs/${runId}/decision`,
         {
             method: "POST",

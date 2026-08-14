@@ -16,7 +16,10 @@ from app.workflow.state import WorkflowState
 
 
 def failed_node(state: WorkflowState) -> WorkflowState:
-    return state
+    return {
+        **state,
+        "status": "failed",
+    }
 
 
 def should_retry(state: WorkflowState) -> bool:

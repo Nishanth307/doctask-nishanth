@@ -292,4 +292,4 @@ class TestWorkflowGraphIntegration:
         # 3. Assert terminal failure
         assert result["retry_count"] == 3
         assert result["error"] == "Permanent LLM error"
-        assert result.get("status") is None  # Never reached update node
+        assert result.get("status") == "failed"  # Marked failed by failed_node

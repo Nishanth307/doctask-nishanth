@@ -1,6 +1,6 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
-export async function apiRequest<T>(
+export async function apiClient <T>(
     path: string,
     options: RequestInit = {},
 ): Promise<T> {

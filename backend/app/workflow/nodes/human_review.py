@@ -4,13 +4,15 @@ from app.workflow.state import WorkflowState
 
 
 def human_review_node(state: WorkflowState) -> WorkflowState:
-    decision = interrupt(
+    res = interrupt(
         {
             "type": "human_review",
             "run_id": str(state["run_id"]),
             "message": "Human review is required.",
         }
     )
+
+    decision = res.get("decision") if isinstance(res, dict) else res
 
     return {
         **state,
