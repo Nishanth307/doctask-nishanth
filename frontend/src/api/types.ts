@@ -27,6 +27,11 @@ export type ReviewDecision =
   | "rejected"
   | "pending";
 
+export interface RunDocumentSummary {
+  id: string;
+  filename: string;
+}
+
 export interface RunResponse {
   id: string;
   name: string;
@@ -36,6 +41,7 @@ export interface RunResponse {
   updated_at: string;
   completed_at: string | null;
   error_message: string | null;
+  documents?: RunDocumentSummary[];
 }
 
 export interface FindingResponse {

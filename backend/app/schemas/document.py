@@ -12,5 +12,6 @@ class DocumentResponse(BaseModel):
     filename: str
     file_path: str
     file_type: str
+    is_rules: bool
     checksum: str
     created_at: datetime

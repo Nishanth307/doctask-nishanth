@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { DocumentUpload } from "../components/runs/DocumentUpload";
 
 import {
   createRun,
   getRuns,
+  cancelRun,
+  deleteRun,
 } from "../api/runs";
 
 import type { RunResponse } from "../api/types";
@@ -16,6 +19,37 @@ export default function RunsPage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [files, setFiles] = useState<File[]>([]);
+
+  const handleCancelRun = async (runId: string) => {
+    try {
+      setError(null);
+      const updated = await cancelRun(runId);
+      setRuns((prev) => prev.map((r) => (r.id === runId ? updated : r)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to cancel run");
+    }
+  };
+
+  const handleDeleteRun = async (runId: string, runName: string) => {
+    if (!window.confirm(`Delete "${runName}"?\n\nThis will permanently remove this run and its associated workflow data.`)) {
+      return;
+    }
+    try {
+      setError(null);
+      await deleteRun(runId);
+      setRuns((prev) => prev.filter((r) => r.id !== runId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete run");
+    }
+  };
+
+  // Filter & sort states
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [stageFilter, setStageFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("newest");
 
   useEffect(() => {
     let active = true;
@@ -69,10 +103,13 @@ export default function RunsPage() {
     event: React.FormEvent<HTMLFormElement>,
   ) => {
     event.preventDefault();
+    if (creating) {
+      return;
+    }
 
     const trimmedName = name.trim();
 
-    if (!trimmedName) {
+    if (!trimmedName || files.length === 0) {
       return;
     }
 
@@ -80,11 +117,10 @@ export default function RunsPage() {
       setCreating(true);
       setError(null);
 
-      const run = await createRun({
-        name: trimmedName,
-      });
+      const run = await createRun(trimmedName, files);
 
       setName("");
+      setFiles([]);
 
       navigate(`/runs/${run.id}`);
     } catch (err) {
@@ -98,6 +134,30 @@ export default function RunsPage() {
     }
   };
 
+  // Local filtering and sorting logic
+  const filteredRuns = runs
+    .filter((run) => {
+      const matchesSearch = run.name.toLowerCase().includes(search.toLowerCase());
+      const matchesStatus = statusFilter === "all" || run.status === statusFilter;
+      const matchesStage = stageFilter === "all" || run.stage === stageFilter;
+      return matchesSearch && matchesStatus && matchesStage;
+    })
+    .sort((a, b) => {
+      if (sortBy === "newest") {
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      }
+      if (sortBy === "oldest") {
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      }
+      if (sortBy === "name_asc") {
+        return a.name.localeCompare(b.name);
+      }
+      if (sortBy === "name_desc") {
+        return b.name.localeCompare(a.name);
+      }
+      return 0;
+    });
+
   return (
     <div>
       <header className="page-header">
@@ -110,17 +170,28 @@ export default function RunsPage() {
       <section className="card">
         <h2>Create Run</h2>
 
-        <form onSubmit={handleCreateRun} className="run-form">
+        <form onSubmit={handleCreateRun} className="run-form" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder="Run name"
+            placeholder="e.g. Acme Contract Review - August 2026"
+            disabled={creating}
+            style={{ width: "100%" }}
+          />
+          <div style={{ fontSize: "12px", color: "#64748b", marginTop: "-4px" }}>
+            ⓘ A short name to identify this workflow run.
+          </div>
+
+          <DocumentUpload
+            files={files}
+            onFilesChange={setFiles}
             disabled={creating}
           />
 
           <button
             type="submit"
-            disabled={creating || !name.trim()}
+            disabled={creating || !name.trim() || files.length === 0}
+            style={{ alignSelf: "flex-start", marginTop: "8px" }}
           >
             {creating ? "Creating..." : "Create Run"}
           </button>
@@ -144,22 +215,95 @@ export default function RunsPage() {
       <section className="card">
         <h2>Recent Runs</h2>
 
+        {/* Filter controls */}
+        {runs.length > 0 && (
+          <div className="run-filters">
+            <input
+              type="text"
+              placeholder="Search runs..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="all">All statuses</option>
+              <option value="pending">Pending</option>
+              <option value="running">Running</option>
+              <option value="waiting_for_review">Waiting for review</option>
+              <option value="completed">Completed</option>
+              <option value="failed">Failed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+
+            <select
+              value={stageFilter}
+              onChange={(e) => setStageFilter(e.target.value)}
+            >
+              <option value="all">All stages</option>
+              <option value="ingestion">Ingestion</option>
+              <option value="classification">Classification</option>
+              <option value="extraction">Extraction</option>
+              <option value="reconciliation">Reconciliation</option>
+              <option value="examination">Examination</option>
+              <option value="review">Review</option>
+              <option value="commit">Commit</option>
+            </select>
+
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+            >
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="name_asc">Name A–Z</option>
+              <option value="name_desc">Name Z–A</option>
+            </select>
+          </div>
+        )}
+
         {loading ? (
           <p>Loading runs...</p>
         ) : runs.length === 0 ? (
-          <p>No runs yet. Create your first run above.</p>
+          <div className="empty-state">
+            <h3>No runs yet</h3>
+            <p>Create your first document-processing run.</p>
+          </div>
+        ) : filteredRuns.length === 0 ? (
+          <div className="empty-state">
+            <h3>No matching runs</h3>
+            <p>Try changing your search or filters.</p>
+          </div>
         ) : (
           <div className="run-list">
-            {runs.map((run) => (
+            {filteredRuns.map((run) => (
               <article key={run.id} className="run-item">
                 <div className="run-item-header">
-                  <h3>{run.name}</h3>
+                  <h3 className="run-name" title={run.name}>
+                    {run.name}
+                  </h3>
                   <span
                     className={`status-badge status-${run.status}`}
                   >
+                    {run.status === "running" && <span className="running-dot">●</span>}
+                    {run.status === "waiting_for_review" && "⚠ "}
+                    {run.status === "completed" && "✓ "}
+                    {run.status === "failed" && "✕ "}
                     {run.status.replaceAll("_", " ")}
                   </span>
                 </div>
+
+                {run.documents && run.documents.length > 0 && (
+                  <div className="run-card-documents">
+                    {run.documents.map((doc) => (
+                      <div key={doc.id} className="run-card-document-item" title={doc.filename}>
+                        📄 {doc.filename}
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 <p>
                   Stage: {run.stage}
@@ -170,14 +314,34 @@ export default function RunsPage() {
                   {new Date(run.created_at).toLocaleString()}
                 </p>
 
-                <button
-                  type="button"
-                  onClick={() =>
-                    navigate(`/runs/${run.id}`)
-                  }
-                >
-                  View Run
-                </button>
+                <div className="run-item-actions">
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/runs/${run.id}`)}
+                  >
+                    View Run
+                  </button>
+
+                  {(run.status === "pending" || run.status === "running" || run.status === "waiting_for_review") && (
+                    <button
+                      type="button"
+                      className="btn-cancel"
+                      onClick={() => handleCancelRun(run.id)}
+                    >
+                      Cancel
+                    </button>
+                  )}
+
+                  {(run.status === "completed" || run.status === "failed" || run.status === "cancelled") && (
+                    <button
+                      type="button"
+                      className="btn-delete"
+                      onClick={() => handleDeleteRun(run.id, run.name)}
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
               </article>
             ))}
           </div>

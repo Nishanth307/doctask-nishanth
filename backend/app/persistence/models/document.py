@@ -47,6 +47,8 @@ class Document(UUIDMixin, TimestampMixin, Base):
         nullable=False,
     )
 
+    is_rules: Mapped[bool] = mapped_column(default=False, nullable=False)
+
     extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     run: Mapped[Run] = relationship(

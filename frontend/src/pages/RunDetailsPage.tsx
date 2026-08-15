@@ -187,7 +187,14 @@ function RunDetailsPage() {
 
       <section>
         <p>
-          <strong>Status:</strong> {run.status}
+          <strong>Status:</strong>{" "}
+          <span className={`status-badge status-${run.status}`} style={{ display: "inline-flex", verticalAlign: "middle" }}>
+            {run.status === "running" && <span className="running-dot">●</span>}
+            {run.status === "waiting_for_review" && "⚠ "}
+            {run.status === "completed" && "✓ "}
+            {run.status === "failed" && "✕ "}
+            {run.status.replaceAll("_", " ")}
+          </span>
         </p>
 
         <p>
@@ -263,7 +270,10 @@ function RunDetailsPage() {
 
       <ReportView report={details.report} />
 
-      <WorkflowResultView result={details.workflow_result} />
+      <WorkflowResultView
+        result={details.workflow_result}
+        runStatus={run.status}
+      />
     </main>
   );
 }

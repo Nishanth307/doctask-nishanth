@@ -26,7 +26,7 @@ class DocumentService:
         self.storage = storage
         self.ingestion_pipeline = ingestion_pipeline
 
-    def upload_document(self, run_id: UUID, filename: str, content: bytes) -> Document:
+    def upload_document(self, run_id: UUID, filename: str, content: bytes, is_rules: bool = False) -> Document:
         run = self.run_repository.get_by_id(run_id)
 
         if run is None:
@@ -36,6 +36,9 @@ class DocumentService:
 
         if extension not in (".pdf", ".docx", ".txt"):
             raise ValueError(f"Unsupported file type: {extension}")
+
+        if len(content) > 10 * 1024 * 1024:
+            raise ValueError("File exceeds 10 MB limit")
 
         checksum = calculate_sha256(content)
 
@@ -52,6 +55,7 @@ class DocumentService:
             file_path=file_path,
             file_type=extension,
             checksum=checksum,
+            is_rules=is_rules,
         )
 
         document = self.document_repository.create(document)

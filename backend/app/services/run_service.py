@@ -1,8 +1,13 @@
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from uuid import UUID
 
+from fastapi import UploadFile
+
 from app.core.constants import RunStatus, WorkflowStage
+
+if TYPE_CHECKING:
+    from app.services.document_service import DocumentService
 from app.persistence.models.run import Run
 from app.persistence.repositories.run import RunRepository
 from app.persistence.repositories.finding import FindingRepository
@@ -106,6 +111,44 @@ class RunService:
 
         return self.repository.create(run)
 
+    def create_run_with_documents(
+        self,
+        name: str,
+        files: list[UploadFile],
+        rules_file: UploadFile | None,
+        doc_service: "DocumentService",
+    ) -> Run:
+        if not name.strip():
+            raise ValueError("Run name is required")
+        if not files:
+            raise ValueError("At least one document is required")
+
+        run = self.create_run(name.strip())
+
+        for file in files:
+            if not file.filename:
+                raise ValueError("Filename is required")
+            content = file.file.read()
+            doc_service.upload_document(
+                run_id=run.id,
+                filename=file.filename,
+                content=content,
+                is_rules=False,
+            )
+
+        if rules_file:
+            if not rules_file.filename:
+                raise ValueError("Filename is required")
+            content = rules_file.file.read()
+            doc_service.upload_document(
+                run_id=run.id,
+                filename=rules_file.filename,
+                content=content,
+                is_rules=True,
+            )
+
+        return run
+
     def get_run(self, run_id: UUID) -> Run | None:
         return self.repository.get_by_id(run_id)
 
@@ -168,9 +211,25 @@ class RunService:
             "Workflow started",
         )
 
+        documents_state = []
+        rules_state = []
+        for doc in run.documents:
+            doc_dict = {
+                "id": str(doc.id),
+                "filename": doc.filename,
+                "text": doc.extracted_text or "",
+            }
+            if getattr(doc, "is_rules", False):
+                rules_state.append(doc_dict)
+            else:
+                documents_state.append(doc_dict)
+
         result = self.workflow_service.start(
             state={
                 "run_id": run.id,
+                "documents": documents_state,
+                "document_ids": [doc.id for doc in run.documents if not getattr(doc, "is_rules", False)],
+                "rules": rules_state,
             },
             thread_id=run.thread_id or str(run.id),
         )
@@ -305,3 +364,20 @@ class RunService:
 
     def get_runs(self) -> list[Run]:
         return self.repository.get_all()
+
+    def cancel_run(self, run: Run) -> Run:
+        if run.status not in (RunStatus.PENDING, RunStatus.RUNNING, RunStatus.WAITING_FOR_REVIEW):
+            raise ValueError(f"Cannot cancel run in {run.status.value} status")
+        run.status = RunStatus.CANCELLED
+        self._record_event(
+            run,
+            run.stage,
+            "cancelled",
+            "Workflow cancelled by user",
+        )
+        return run
+
+    def delete_run(self, run: Run) -> None:
+        if run.status in (RunStatus.RUNNING, RunStatus.WAITING_FOR_REVIEW):
+            raise ValueError(f"Cannot delete an active run in {run.status.value} status. Cancel it first.")
+        self.repository.delete(run)

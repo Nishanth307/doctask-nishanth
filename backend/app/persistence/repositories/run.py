@@ -8,6 +8,9 @@ from app.persistence.models import Run
 from app.persistence.repositories.base import BaseRepository
 
 
+from sqlalchemy.orm import selectinload
+
+
 class RunRepository(BaseRepository[Run]):
     def __init__(self, db: Session) -> None:
         super().__init__(db, Run)
@@ -25,6 +28,7 @@ class RunRepository(BaseRepository[Run]):
     def get_all(self) -> list[Run]:
         statement = (
             select(Run)
+            .options(selectinload(Run.documents))
             .order_by(Run.created_at.desc())
         )
 

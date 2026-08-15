@@ -10,6 +10,7 @@ class WorkflowState(TypedDict, total=False):
     run_id: UUID 
     document_ids: list[UUID]
     documents: list[dict[str,Any]]
+    rules: list[dict[str, Any]]
 
     classification: ClassificationResult | None
     extracted_facts: list[dict[str, Any]]

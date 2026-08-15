@@ -680,3 +680,40 @@ class TestRunService:
         # Assert
         assert runs == expected_runs
         self.repository.get_all.assert_called_once()
+
+    def test_cancel_run_success(self):
+        # Arrange
+        run = Run(status=RunStatus.RUNNING, stage=WorkflowStage.CLASSIFICATION)
+
+        # Act
+        self.service.cancel_run(run)
+
+        # Assert
+        assert run.status == RunStatus.CANCELLED
+        self.workflow_event_service.record.assert_called_once()
+
+    def test_cancel_run_raises_value_error_for_completed(self):
+        # Arrange
+        run = Run(status=RunStatus.COMPLETED)
+
+        # Act & Assert
+        with pytest.raises(ValueError, match="Cannot cancel run in completed status"):
+            self.service.cancel_run(run)
+
+    def test_delete_run_success(self):
+        # Arrange
+        run = Run(status=RunStatus.CANCELLED)
+
+        # Act
+        self.service.delete_run(run)
+
+        # Assert
+        self.repository.delete.assert_called_once_with(run)
+
+    def test_delete_run_raises_value_error_for_active_running(self):
+        # Arrange
+        run = Run(status=RunStatus.RUNNING)
+
+        # Act & Assert
+        with pytest.raises(ValueError, match="Cannot delete an active run"):
+            self.service.delete_run(run)

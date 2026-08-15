@@ -46,7 +46,37 @@ class ExamineNode:
                 for document in state.get("documents", [])
             )
 
-            prompt = f"""
+            rules_text = "\n\n".join(
+                rule.get("text", "")
+                for rule in state.get("rules", [])
+            )
+
+            if rules_text:
+                prompt = f"""
+You are a document examination system.
+
+Evaluate the extracted facts from the source documents against the user-supplied review rules/checklist.
+
+Original source document text:
+{document_text}
+
+Extracted facts:
+{extracted_facts}
+
+User-supplied review rules / checklist:
+{rules_text}
+
+Determine whether the extracted information and source documents violate or conform to the user-supplied review rules/checklist.
+Do not invent checklist rules. If the user-supplied rules are not violated, return is_valid=True and an empty list of issues.
+
+Return:
+- is_valid: whether the document/facts conform to the user-supplied review rules
+- confidence: confidence between 0 and 1
+- issues: a list of specific issues found (each issue should describe the violation and reference the source/rule)
+- summary: a concise examination summary
+"""
+            else:
+                prompt = f"""
 You are a document examination system.
 
 Evaluate the extracted information from the document.

@@ -16,6 +16,14 @@ class RunCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
 
 
+class DocumentSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    filename: str
+    is_rules: bool
+
+
 class RunResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -27,6 +35,7 @@ class RunResponse(BaseModel):
     updated_at: datetime
     completed_at: datetime | None
     error_message: str | None
+    documents: list[DocumentSummary] = []
 
 
 class HumanDecisionRequest(BaseModel):

@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     DEBUG: bool = True
 
+    CORS_ORIGINS: str = "http://localhost:5173"
+
     API_V1_PREFIX: str = "/api/v1"
 
     TEMPERATURE: float = 0
