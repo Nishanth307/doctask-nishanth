@@ -43,6 +43,7 @@ export interface RunResponse {
   completed_at: string | null;
   error_message: string | null;
   documents?: RunDocumentSummary[];
+  parent_id?: string | null;
 }
 
 export interface FindingResponse {

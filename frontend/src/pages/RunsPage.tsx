@@ -226,7 +226,7 @@ export default function RunsPage() {
       )}
 
       <section className="card">
-        <h2>Recent Runs</h2>
+        <h2>Run History</h2>
 
         {/* Filter controls */}
         {runs.length > 0 && (
@@ -294,9 +294,16 @@ export default function RunsPage() {
             {filteredRuns.map((run) => (
               <article key={run.id} className="run-item">
                 <div className="run-item-header">
-                  <h3 className="run-name" title={run.name}>
-                    {run.name}
-                  </h3>
+                  <div>
+                    <h3 className="run-name" title={run.name} style={{ margin: 0 }}>
+                      {run.name}
+                    </h3>
+                    {run.parent_id && (
+                      <span style={{ fontSize: "11px", color: "#0284c7", backgroundColor: "#e0f2fe", padding: "2px 6px", borderRadius: "4px", fontWeight: "bold", marginTop: "4px", display: "inline-block" }}>
+                        ↳ Incremental Update
+                      </span>
+                    )}
+                  </div>
                   <span
                     className={`status-badge status-${run.status}`}
                   >
