@@ -1,5 +1,5 @@
 from functools import lru_cache
-
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.constants.enums import GeminiModel, LLMProvider
@@ -38,6 +38,27 @@ class Settings(BaseSettings):
     DOCTASK_WATCH_FOLDER: str = "storage/watch"
     LLM_FALLBACK_MODELS: str = "gemini-2.5-pro,gemini-2.5-flash,gemini-2.0-flash"
 
+    @property
+    def absolute_upload_dir(self) -> Path:
+        return get_absolute_path(self.UPLOAD_DIRECTORY)
+
+    @property
+    def absolute_generated_dir(self) -> Path:
+        return get_absolute_path(self.GENERATED_DIRECTORY)
+
+    @property
+    def absolute_watch_dir(self) -> Path:
+        return get_absolute_path(self.DOCTASK_WATCH_FOLDER)
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+STORAGE_ROOT = PROJECT_ROOT / "storage"
+
+# Define properties to get absolute paths independent of process cwd
+def get_absolute_path(path_str: str) -> Path:
+    path = Path(path_str)
+    if not path.is_absolute():
+        return (PROJECT_ROOT / path).resolve()
+    return path.resolve()
 
 @lru_cache
 def get_settings() -> Settings:

@@ -124,31 +124,35 @@ class RunService:
         if not files:
             raise ValueError("At least one document is required")
 
-        run = self.create_run(name.strip())
+        try:
+            run = self.create_run(name.strip())
 
-        for file in files:
-            if not file.filename:
-                raise ValueError("Filename is required")
-            content = file.file.read()
-            doc_service.upload_document(
-                run_id=run.id,
-                filename=file.filename,
-                content=content,
-                is_rules=False,
-            )
+            for file in files:
+                if not file.filename:
+                    raise ValueError("Filename is required")
+                content = file.file.read()
+                doc_service.upload_document(
+                    run_id=run.id,
+                    filename=file.filename,
+                    content=content,
+                    is_rules=False,
+                )
 
-        if rules_file:
-            if not rules_file.filename:
-                raise ValueError("Filename is required")
-            content = rules_file.file.read()
-            doc_service.upload_document(
-                run_id=run.id,
-                filename=rules_file.filename,
-                content=content,
-                is_rules=True,
-            )
+            if rules_file:
+                if not rules_file.filename:
+                    raise ValueError("Filename is required")
+                content = rules_file.file.read()
+                doc_service.upload_document(
+                    run_id=run.id,
+                    filename=rules_file.filename,
+                    content=content,
+                    is_rules=True,
+                )
 
-        return run
+            return run
+        except Exception as exc:
+            self.repository.db.rollback()
+            raise exc
 
     def get_run(self, run_id: UUID) -> Run | None:
         return self.repository.get_by_id(run_id)

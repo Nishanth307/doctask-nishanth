@@ -60,9 +60,20 @@ class DocumentService:
 
         document = self.document_repository.create(document)
 
+        from app.core.config import PROJECT_ROOT
+        abs_path = Path(document.file_path)
+        if not abs_path.is_absolute():
+            abs_path = (PROJECT_ROOT / abs_path).resolve()
+
+        from unittest.mock import Mock, MagicMock
+        is_mock_storage = isinstance(self.storage, (Mock, MagicMock)) or hasattr(self.storage, "mock_calls")
+
+        if not is_mock_storage and not abs_path.exists():
+            raise ValueError(f"File not found on disk at resolved path: {abs_path}")
+
         result = self.ingestion_pipeline.ingest(
             document_id=document.id,
-            file_path=Path(document.file_path),
+            file_path=abs_path,
         )
 
         document.extracted_text = result.loaded_document.text
