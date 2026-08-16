@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# DocTask local storage uploads
+storage/uploads/
+backend/storage/uploads/
