@@ -19,12 +19,23 @@ class DocumentLoaderFactory:
         }
 
     def create(self, file_path: Path) -> DocumentLoader:
-        extension = file_path.suffix.lower()
-
         try:
-            document_format = DocumentFormat(extension)
-        except ValueError:
-            raise ValueError(f"Unsupported document type: {extension}")
+            with open(file_path, "rb") as f:
+                header = f.read(4)
+        except Exception:
+            header = b""
+
+        document_format = None
+        if header.startswith(b"%PDF"):
+            document_format = DocumentFormat.PDF
+        elif header.startswith(b"PK\x03\x04"):
+            document_format = DocumentFormat.DOCX
+        else:
+            extension = file_path.suffix.lower()
+            try:
+                document_format = DocumentFormat(extension)
+            except ValueError:
+                raise ValueError(f"Unsupported document type: {extension}")
 
         loader_class = self._loader_menu.get(document_format)
 
