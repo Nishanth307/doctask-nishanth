@@ -4,6 +4,9 @@ interface DocumentUploadProps {
   files: File[];
   onFilesChange: (files: File[]) => void;
   disabled?: boolean;
+  label?: string;
+  description?: string;
+  multiple?: boolean;
 }
 
 interface RejectedFile {
@@ -15,6 +18,9 @@ export function DocumentUpload({
   files,
   onFilesChange,
   disabled = false,
+  label = "Documents",
+  description = "Drop files here",
+  multiple = true,
 }: DocumentUploadProps) {
   const [dragActive, setDragActive] = useState(false);
   const [rejectedFiles, setRejectedFiles] = useState<RejectedFile[]>([]);
@@ -23,10 +29,11 @@ export function DocumentUpload({
   const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
   const validateAndAddFiles = (incomingFiles: File[]) => {
-    const validFiles: File[] = [...files];
+    const validFiles: File[] = multiple ? [...files] : [];
     const newRejected: RejectedFile[] = [];
+    const filesToValidate = multiple ? incomingFiles : incomingFiles.slice(0, 1);
 
-    incomingFiles.forEach((file) => {
+    filesToValidate.forEach((file) => {
       const ext = file.name.split(".").pop()?.toLowerCase();
       if (ext !== "pdf" && ext !== "docx") {
         newRejected.push({
@@ -104,7 +111,7 @@ export function DocumentUpload({
   return (
     <div className="document-upload-container" style={{ margin: "16px 0" }}>
       <label style={{ display: "block", marginBottom: "8px", fontWeight: "bold" }}>
-        Documents
+        {label}
       </label>
 
       <div
@@ -128,20 +135,20 @@ export function DocumentUpload({
         <input
           ref={inputRef}
           type="file"
-          multiple
+          multiple={multiple}
           accept=".pdf,.docx"
           onChange={handleChange}
           disabled={disabled}
           style={{ display: "none" }}
         />
         <div style={{ color: "#475569" }}>
-          <strong>Drop files here</strong>
+          <strong>{description}</strong>
         </div>
         <div style={{ color: "#64748b", fontSize: "14px", marginTop: "4px" }}>
           or click to browse
         </div>
         <div style={{ color: "#94a3b8", fontSize: "12px", marginTop: "8px" }}>
-          PDF / DOCX · Max 10 MB each
+          PDF / DOCX · Max 10 MB
         </div>
       </div>
 

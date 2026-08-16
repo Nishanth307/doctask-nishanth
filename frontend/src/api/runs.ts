@@ -6,6 +6,7 @@ import type {
     RunDetailsResponse,
     RunResponse,
     WorkflowRunResponse,
+    FindingResponse,
 } from "./types";
 
 export function getRuns(): Promise<RunResponse[]> {
@@ -15,11 +16,15 @@ export function getRuns(): Promise<RunResponse[]> {
 export function createRun(
   name: string,
   files: File[],
+  rulesFile: File | null,
 ): Promise<RunResponse> {
   const formData = new FormData();
   formData.append("name", name);
   for (const file of files) {
     formData.append("files", file);
+  }
+  if (rulesFile) {
+    formData.append("rules_file", rulesFile);
   }
 
   return apiClient<RunResponse>("/runs", {
@@ -79,5 +84,16 @@ export function cancelRun(runId: string): Promise<RunResponse> {
 export function deleteRun(runId: string): Promise<void> {
   return apiClient<void>(`/runs/${runId}`, {
     method: "DELETE",
+  });
+}
+
+export function submitFindingDecision(
+  runId: string,
+  findingId: string,
+  decision: "approve" | "reject",
+): Promise<FindingResponse> {
+  return apiClient<FindingResponse>(`/runs/${runId}/findings/${findingId}/decision`, {
+    method: "POST",
+    body: JSON.stringify({ decision }),
   });
 }

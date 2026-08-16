@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link, useParams } from "react-router-dom";
 
-import { getRunDetails, startRun, getRunReview, submitHumanDecision } from "../api/runs";
-import type { RunDetailsResponse, ReviewResponse } from "../api/types";
+import { getRunDetails, startRun } from "../api/runs";
+import type { RunDetailsResponse } from "../api/types";
 import { RunTimeline } from "../components/RunTimeline";
 import { ReviewQueue } from "../components/review/ReviewQueue";
 import { FindingsList } from "../components/findings/FindingsList";
@@ -15,7 +15,6 @@ function RunDetailsPage() {
   const { runId } = useParams<{ runId: string }>();
 
   const [details, setDetails] = useState<RunDetailsResponse | null>(null);
-  const [review, setReview] = useState<ReviewResponse | null>(null);
   const [loading, setLoading] = useState(!!runId);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(runId ? null : "Run ID is missing.");
@@ -86,22 +85,7 @@ function RunDetailsPage() {
       });
   };
 
-  useEffect(() => {
-    if (!runId || !run || run.status !== "waiting_for_review") {
-      return;
-    }
 
-    getRunReview(runId)
-      .then(setReview)
-      .catch((err) => {
-        console.error(err);
-        setError("Failed to load review data.");
-      });
-
-    return () => {
-      setReview(null);
-    };
-  }, [runId, run]);
 
   async function handleStart() {
     if (!runId) {
@@ -123,27 +107,6 @@ function RunDetailsPage() {
       );
     } finally {
       setStarting(false);
-    }
-  }
-
-  async function handleDecision(decision: "approved" | "rejected") {
-    if (!runId) {
-      return;
-    }
-
-    const payload = {
-      decision: decision === "approved" ? "approve" : "reject",
-    };
-
-    try {
-      setError(null);
-      await submitHumanDecision(runId, payload);
-      const updatedDetails = await getRunDetails(runId);
-      setDetails(updatedDetails);
-      setReview(null);
-    } catch (err) {
-      console.error(err);
-      setError("Failed to submit decision.");
     }
   }
 
@@ -248,10 +211,11 @@ function RunDetailsPage() {
         </section>
       )}
 
-      {run.status === "waiting_for_review" && review && (
+      {run.status === "waiting_for_review" && (
         <ReviewQueue
-          review={review}
-          onDecision={handleDecision}
+          runId={run.id}
+          findings={details.findings}
+          onRefresh={fetchDetails}
         />
       )}
 

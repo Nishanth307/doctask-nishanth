@@ -191,7 +191,7 @@ class TestWorkflowRouting:
             "max_retries": 3,
         }
 
-        assert route_after_examine(state) == "update"
+        assert route_after_examine(state) == "commit"
 
     def test_route_after_examine_retries_on_failure(self):
         state = {

@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     DEFAULT_PROVIDER: LLMProvider = LLMProvider.GEMINI
     GOOGLE_API_KEY: str | None = None
     GEMINI_MODEL: GeminiModel = GeminiModel.GEMINI_2_5_FLASH
+    LLM_PRIMARY_MODEL: str = "gemini-2.5-pro"
 
     DATABASE_URL: str = "postgresql+psycopg://user:1234@localhost:5432/doctask"
     UPLOAD_DIRECTORY: str = "storage/uploads"
@@ -34,6 +35,8 @@ class Settings(BaseSettings):
     EMBEDDING_PROVIDER: str = "google"
 
     LOG_LEVEL: str = "INFO"
+    DOCTASK_WATCH_FOLDER: str = "storage/watch"
+    LLM_FALLBACK_MODELS: str = "gemini-2.5-pro,gemini-2.5-flash,gemini-2.0-flash"
 
 
 @lru_cache

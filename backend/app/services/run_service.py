@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from typing import Any, TYPE_CHECKING
 from uuid import UUID
+from sqlalchemy.orm import Session
 
 from fastapi import UploadFile
 
@@ -213,6 +214,19 @@ class RunService:
 
         documents_state = []
         rules_state = []
+        
+        # If this is an incremental run, look up rules from parent
+        if getattr(run, "parent_id", None):
+            parent_run = self.repository.get_by_id(run.parent_id)
+            if parent_run:
+                for doc in parent_run.documents:
+                    if getattr(doc, "is_rules", False):
+                        rules_state.append({
+                            "id": str(doc.id),
+                            "filename": doc.filename,
+                            "text": doc.extracted_text or "",
+                        })
+
         for doc in run.documents:
             doc_dict = {
                 "id": str(doc.id),
@@ -223,6 +237,9 @@ class RunService:
                 rules_state.append(doc_dict)
             else:
                 documents_state.append(doc_dict)
+
+        from app.core.logging import logger
+        logger.info(f"run={run.id} thread={run.thread_id or str(run.id)} stage={run.stage.value} checkpoint={run.thread_id or str(run.id)}")
 
         result = self.workflow_service.start(
             state={
@@ -279,6 +296,27 @@ class RunService:
                 state=state,
             )
 
+        else:
+            from app.core.database import SessionLocal
+            from app.persistence.models.finding import Finding
+            from app.core.constants import ReviewDecision
+            db = SessionLocal()
+            try:
+                pending_count = db.query(Finding).filter(
+                    Finding.run_id == run.id,
+                    Finding.review_decision == ReviewDecision.PENDING
+                ).count()
+                if pending_count > 0:
+                    self.wait_for_review(run)
+                    self._record_event(
+                        run,
+                        WorkflowStage.REVIEW,
+                        "waiting",
+                        f"Workflow is waiting for human review of {pending_count} findings",
+                    )
+            finally:
+                db.close()
+
         return result
 
     def resume_workflow(
@@ -307,6 +345,9 @@ class RunService:
             "decision",
             f"Human decision: {decision}",
         )
+
+        from app.core.logging import logger
+        logger.info(f"run={run.id} thread={run.thread_id} resuming_from={run.stage.value}")
 
         result = self.workflow_service.resume(
             thread_id=run.thread_id,
@@ -358,7 +399,27 @@ class RunService:
             )
 
         else:
-            run.status = RunStatus.RUNNING
+            from app.core.database import SessionLocal
+            from app.persistence.models.finding import Finding
+            from app.core.constants import ReviewDecision
+            db = SessionLocal()
+            try:
+                pending_count = db.query(Finding).filter(
+                    Finding.run_id == run.id,
+                    Finding.review_decision == ReviewDecision.PENDING
+                ).count()
+                if pending_count > 0:
+                    self.wait_for_review(run)
+                    self._record_event(
+                        run,
+                        WorkflowStage.REVIEW,
+                        "waiting",
+                        f"Workflow is waiting for human review of {pending_count} findings",
+                    )
+                else:
+                    run.status = RunStatus.RUNNING
+            finally:
+                db.close()
 
         return result
 
@@ -381,3 +442,111 @@ class RunService:
         if run.status in (RunStatus.RUNNING, RunStatus.WAITING_FOR_REVIEW):
             raise ValueError(f"Cannot delete an active run in {run.status.value} status. Cancel it first.")
         self.repository.delete(run)
+
+    def detect_and_process_updates(self, run: Run, watch_folder: str, db: Session) -> Run | None:
+        """
+        Locks the run, scans the watched folder, identifies new supported files (.pdf, .docx),
+        creates an incremental update run, associates new files, and starts the update run workflow.
+        """
+        import os
+        import hashlib
+        from sqlalchemy import select
+        from app.persistence.models.run import Run
+        from app.persistence.models.document import Document
+        from app.core.constants import RunStatus, WorkflowStage
+        from app.core.logging import logger
+
+        # 1. Lock the initial run using SELECT ... FOR UPDATE
+        # To prevent concurrency issues across multiple worker processes
+        locked_run = db.query(Run).filter(Run.id == run.id).with_for_update().first()
+        if not locked_run:
+            logger.info("Run lock failed: Run not found")
+            return None
+
+        if not os.path.exists(watch_folder):
+            logger.info(f"document ignored: watch folder {watch_folder} does not exist")
+            return None
+
+        # 2. Scan watched folder for new supported files
+        supported_exts = (".pdf", ".docx")
+        new_files = []
+        
+        # Get existing document checksums for this run corpus (including child runs)
+        run_ids = [run.id]
+        child_runs = db.query(Run).filter(Run.parent_id == run.id).all()
+        for cr in child_runs:
+            run_ids.append(cr.id)
+            
+        existing_docs = db.query(Document).filter(Document.run_id.in_(run_ids)).all()
+        existing_checksums = {d.checksum for d in existing_docs if d.checksum}
+
+        # Sort files to process deterministically
+        filenames = sorted(os.listdir(watch_folder))
+        for filename in filenames:
+            ext = os.path.splitext(filename)[1].lower()
+            if ext not in supported_exts:
+                logger.info(f"document ignored: unsupported file {filename}")
+                continue
+
+            filepath = os.path.join(watch_folder, filename)
+            if not os.path.isfile(filepath):
+                continue
+
+            # Compute checksum
+            sha256 = hashlib.sha256()
+            try:
+                with open(filepath, "rb") as f:
+                    while chunk := f.read(8192):
+                        sha256.update(chunk)
+                checksum = sha256.hexdigest()
+            except Exception as e:
+                logger.error(f"Failed to read file {filename}: {e}")
+                continue
+
+            if checksum in existing_checksums:
+                logger.info(f"update already exists: file {filename} has already been processed")
+                continue
+
+            new_files.append((filename, filepath, checksum))
+
+        if not new_files:
+            logger.info("No new documents discovered in watch folder")
+            return None
+
+        logger.info(f"document discovered: found {len(new_files)} new files")
+
+        # 3. Create update_run
+        update_run = Run(
+            name=f"Update for {run.name}",
+            status=RunStatus.PENDING,
+            stage=WorkflowStage.INGESTION,
+            parent_id=run.id,
+        )
+        db.add(update_run)
+        db.flush()
+        logger.info(f"update created: run_id={update_run.id} parent_id={run.id}")
+
+        # 4. Upload documents to the update_run
+        from app.api.routes_ingest import get_document_service
+        doc_service = get_document_service(db)
+        for filename, filepath, checksum in new_files:
+            with open(filepath, "rb") as f:
+                content = f.read()
+            # Register in DB and upload
+            doc_service.upload_document(
+                run_id=update_run.id,
+                filename=filename,
+                content=content,
+                is_rules=False,
+            )
+
+        db.commit()
+        db.refresh(update_run)
+
+        # 5. Start the workflow for the update_run
+        logger.info(f"Starting incremental update run {update_run.id}")
+        self.start_workflow(update_run)
+        db.commit()
+        
+        logger.info(f"update completed: run_id={update_run.id}")
+        return update_run

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Enum, String, Text
+from sqlalchemy import DateTime, Enum, String, Text, ForeignKey, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.base import Base
@@ -28,6 +28,12 @@ class Run(UUIDMixin, TimestampMixin, Base):
         String(255),
         nullable=True,
         unique=True,
+        index=True,
+    )
+
+    parent_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("runs.id", ondelete="CASCADE"),
+        nullable=True,
         index=True,
     )
 
@@ -72,3 +78,18 @@ class Run(UUIDMixin, TimestampMixin, Base):
 
     def __repr__(self) -> str:
         return f"Run(id={self.id}, " f"name={self.name!r}, " f"status={self.status!r})"
+
+    @property
+    def pending_finding_count(self) -> int:
+        from app.core.constants import ReviewDecision
+        return sum(1 for f in self.findings if f.review_decision == ReviewDecision.PENDING)
+
+    @property
+    def approved_finding_count(self) -> int:
+        from app.core.constants import ReviewDecision
+        return sum(1 for f in self.findings if f.review_decision == ReviewDecision.APPROVED)
+
+    @property
+    def rejected_finding_count(self) -> int:
+        from app.core.constants import ReviewDecision
+        return sum(1 for f in self.findings if f.review_decision == ReviewDecision.REJECTED)

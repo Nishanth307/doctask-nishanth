@@ -265,3 +265,39 @@ class TestExamineNode:
         # Assert
         assert result["error"] == "LLM unavailable"
         assert result["retry_count"] == 1
+
+    def test_examine_uses_custom_checklist_rules(self):
+        # Arrange
+        model_factory = MagicMock()
+        model = MagicMock()
+        structured_model = MagicMock()
+
+        model_factory.create_model.return_value = model
+        model.with_structured_output.return_value = structured_model
+
+        structured_model.invoke.return_value = ExaminationResult(
+            is_valid=True,
+            confidence=0.90,
+            issues=[],
+            summary="Valid according to playbooks.",
+        )
+
+        node = ExamineNode(
+            model_factory=model_factory,
+            model_name=ModelName.GEMINI_2_5_FLASH,
+        )
+
+        state = {
+            "documents": [{"text": "Source document content."}],
+            "rules": [{"text": "Rule: Check for indemnification clause."}],
+            "extracted_facts": [],
+            "error": None,
+        }
+
+        # Act
+        node(state)
+
+        # Assert
+        prompt = structured_model.invoke.call_args.args[0]
+        assert "user-supplied review rules" in prompt
+        assert "Rule: Check for indemnification clause." in prompt

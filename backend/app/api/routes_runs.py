@@ -21,6 +21,7 @@ from app.schemas.run import (
     RunResponse,
     WorkflowEventResponse,
     WorkflowRunResponse,
+    FindingResponse,
 )
 from app.services.run_service import RunService
 from app.services.workflow_event_service import (
@@ -391,3 +392,99 @@ def delete_run(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         )
+
+
+from pydantic import BaseModel, Field
+from typing import Literal
+
+class FindingDecisionRequest(BaseModel):
+    decision: Literal["approve", "reject"]
+
+
+@router.post(
+    "/{run_id}/findings/{finding_id}/decision",
+    response_model=FindingResponse,
+)
+def submit_finding_decision(
+    run_id: UUID,
+    finding_id: UUID,
+    payload: FindingDecisionRequest,
+    db: Session = Depends(get_db),
+    service: RunService = Depends(get_run_service),
+) -> FindingResponse:
+    from app.persistence.models.finding import Finding
+    from app.core.constants import ReviewDecision, RunStatus
+
+    finding = db.query(Finding).filter(Finding.id == finding_id).first()
+    if not finding:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Finding not found",
+        )
+
+    if finding.run_id != run_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Finding does not belong to this run",
+        )
+
+    decision_lower = payload.decision.lower()
+    if decision_lower == "approve":
+        finding.review_decision = ReviewDecision.APPROVED
+    elif decision_lower == "reject":
+        finding.review_decision = ReviewDecision.REJECTED
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid decision value",
+        )
+
+    db.commit()
+    db.refresh(finding)
+
+    # Check if all decisions are made
+    pending_count = db.query(Finding).filter(
+        Finding.run_id == run_id,
+        Finding.review_decision == ReviewDecision.PENDING
+    ).count()
+
+    if pending_count == 0:
+        run = service.get_run(run_id)
+        if run and run.status == RunStatus.WAITING_FOR_REVIEW:
+            try:
+                service.resume_workflow(run, "approve")
+                db.commit()
+            except Exception:
+                db.rollback()
+
+    return finding
+
+
+@router.post(
+    "/{run_id}/updates",
+    response_model=RunResponse | None,
+    status_code=status.HTTP_200_OK,
+)
+def trigger_run_update(
+    run_id: UUID,
+    db: Session = Depends(get_db),
+    service: RunService = Depends(get_run_service),
+) -> RunResponse | None:
+    """
+    Trigger watched folder processing to check for new documents and execute incremental updates.
+    """
+    from app.core.config import settings
+    run = service.get_run(run_id)
+    if not run:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Run not found",
+        )
+
+    # Re-use same service layer
+    update_run = service.detect_and_process_updates(
+        run=run,
+        watch_folder=settings.DOCTASK_WATCH_FOLDER,
+        db=db
+    )
+    return update_run

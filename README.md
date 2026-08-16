@@ -140,3 +140,77 @@ Run
  └───────────────*
                  │
           WorkflowEvent
+
+
+## Kill and Resume
+
+DocTask is engineered to fully survive system process terminations and restart events at any stage using a highly durable checkpoint architecture:
+
+- **Durable Checkpoint Storage**: All intermediate LangGraph state checkpoints are persisted in the PostgreSQL database using a durable `PostgresSaver` connection pool. Checkpoint tables are prepared during API startup lifecycles.
+- **Workflow Thread Identification**: Every workflow execution is associated with a stable `thread_id` matching the unique Run ID. Processes restarting can lookup the exact state matching the run identifier.
+- **Human-Review State Persistence**: Decisions are stored directly in PostgreSQL on `Finding` models. When a user approves/rejects findings, states are saved, and resuming looks up those decisions to continue the run.
+- **Idempotent Commit Boundaries**: The `CommitNode` queries previous reports for the run and updates versions incrementally rather than producing duplicate write records, securing database writes against repeated run triggers.
+
+
+## Machine/API Driver
+
+DocTask provides a complete, coherent REST and Model Context Protocol (MCP) contract enabling automated programs to drive the document workflow lifecycle:
+
+### REST API Flow
+1. **Create Run**: `POST /api/v1/runs` (JSON body: `{"name": "Run Name"}`)
+2. **Upload Documents**: `POST /api/v1/runs/{id}/documents?is_rules=false` (multipart form file payload)
+3. **Upload Review Rules**: `POST /api/v1/runs/{id}/documents?is_rules=true` (multipart form file playbook payload)
+4. **Start Run**: `POST /api/v1/runs/{id}/start`
+5. **Get Status & Findings**: `GET /api/v1/runs/{id}` returns findings counts; `GET /api/v1/runs/{id}/details` returns complete findings list
+6. **Submit Decisions**: `POST /api/v1/runs/{id}/findings/{finding_id}/decision` (JSON body: `{"decision": "approve" | "reject"}`)
+7. **Retrieve Deliverable**: `GET /api/v1/runs/{id}/details` reports property returns final generated deliverable
+
+### MCP Server
+An FastMCP adapter server is exposed at `app/mcp/server.py` supporting the tools:
+- `create_run(name)`
+- `upload_document(run_id, filename, content_base64)`
+- `upload_review_rules(run_id, filename, content_base64)`
+- `start_run(run_id)`
+- `get_run_status(run_id)`
+- `get_review_findings(run_id)`
+- `decide_finding(run_id, finding_id, decision)`
+- `get_run_details(run_id)`
+- `process_update(run_id)`
+
+
+## Watched Folder & Incremental Updates
+
+DocTask supports a configurable filesystem directory scanner for newly arrived files, triggering localized, incremental updates:
+
+### Configuration
+Configure the path via the `.env` or system environment variables:
+```bash
+DOCTASK_WATCH_FOLDER=storage/watch
+```
+
+### Discovery & Prevention of Duplicates
+- **Supported Formats**: Only `.pdf` and `.docx` extensions are parsed. Others are ignored.
+- **Durable Uniqueness**: Computes SHA-256 content hashes for scanned documents. It compares these hashes against the database records of all previous runs to prevent double-processing.
+
+### Incremental vs. Initial Runs
+- **Initial Run**: Processes the full document set and playbook rules from scratch.
+- **Incremental Run**: Creates an update run record (`parent_id = initial_id`). The system runs the ingestion pipeline only on the newly discovered document, while reusing the user checklist rules from the parent run. Unaffected findings are preserved.
+
+### Provenance, Resume & Concurrency
+- **Change History (Provenance)**: The update run documents own their findings, citations, and timestamps, allowing audit records to pinpoint which document triggered which change.
+- **Restart/Resume Safety**: State checks use the child run thread checkpointers, so process restarts resume exactly from the interrupted point.
+- **Concurrency Locks**: Uses Postgres `FOR UPDATE` query locking during scan operations to prevent multiple workers from starting overlapping processing threads.
+
+
+## LLM Model Fallback
+
+DocTask implements robust model fallback mechanism to secure workflow executions against transient provider limitations:
+
+- **Why it exists**: Mitigates resource/quota exhaustion errors on Gemini models during intense processing.
+- **Trigger Errors**: Switches models when encountering HTTP 429, 503, rate limits, quota limits, or general resource exhaustion exceptions. Does not fallback for user-level malformed requests, authentication errors, or invalid configuration parameters.
+- **Configuration**: Setup fallback priority chains in `.env` using:
+  ```bash
+  LLM_FALLBACK_MODELS=gemini-2.5-pro,gemini-2.5-flash,gemini-2.0-flash
+  ```
+- **Error Presentation**: If all configured fallback models are exhausted, the execution fails with a descriptive error listing all attempted models.
+- **State Integrity**: Since model swapping is handled locally inside the model wrapper, the LangGraph checkpointer and Postgres thread state are preserved intact without duplication.

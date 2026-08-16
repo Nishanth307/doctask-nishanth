@@ -36,6 +36,10 @@ class RunResponse(BaseModel):
     completed_at: datetime | None
     error_message: str | None
     documents: list[DocumentSummary] = []
+    pending_finding_count: int = 0
+    approved_finding_count: int = 0
+    rejected_finding_count: int = 0
+    parent_id: UUID | None = None
 
 
 class HumanDecisionRequest(BaseModel):

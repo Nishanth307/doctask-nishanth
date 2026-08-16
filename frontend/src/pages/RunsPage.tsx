@@ -21,6 +21,7 @@ export default function RunsPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [files, setFiles] = useState<File[]>([]);
+  const [rulesFile, setRulesFile] = useState<File | null>(null);
 
   const handleCancelRun = async (runId: string) => {
     try {
@@ -109,7 +110,7 @@ export default function RunsPage() {
 
     const trimmedName = name.trim();
 
-    if (!trimmedName || files.length === 0) {
+    if (!trimmedName || files.length === 0 || !rulesFile) {
       return;
     }
 
@@ -117,10 +118,11 @@ export default function RunsPage() {
       setCreating(true);
       setError(null);
 
-      const run = await createRun(trimmedName, files);
+      const run = await createRun(trimmedName, files, rulesFile);
 
       setName("");
       setFiles([]);
+      setRulesFile(null);
 
       navigate(`/runs/${run.id}`);
     } catch (err) {
@@ -186,11 +188,22 @@ export default function RunsPage() {
             files={files}
             onFilesChange={setFiles}
             disabled={creating}
+            label="Source documents"
+            description="Drop source documents here"
+          />
+
+          <DocumentUpload
+            files={rulesFile ? [rulesFile] : []}
+            onFilesChange={(newFiles) => setRulesFile(newFiles[newFiles.length - 1] ?? null)}
+            disabled={creating}
+            label="Review rules"
+            description="Drop rules / playbook / style guide here"
+            multiple={false}
           />
 
           <button
             type="submit"
-            disabled={creating || !name.trim() || files.length === 0}
+            disabled={creating || !name.trim() || files.length === 0 || !rulesFile}
             style={{ alignSelf: "flex-start", marginTop: "8px" }}
           >
             {creating ? "Creating..." : "Create Run"}

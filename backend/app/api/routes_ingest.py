@@ -66,9 +66,14 @@ def get_document_service(
 )
 async def upload_document(
     run_id: UUID,
+    is_rules: bool = False,
     file: UploadFile = File(...),  # noqa: B008
     db: Session = Depends(get_db),  # noqa: B008
 ) -> DocumentResponse:
+    """
+    Upload a document and associate it with a run.
+    Set is_rules=true to upload a review checklist/playbook/style-guide.
+    """
     if not file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -84,6 +89,7 @@ async def upload_document(
             run_id=run_id,
             filename=file.filename,
             content=content,
+            is_rules=is_rules,
         )
 
         db.commit()

@@ -53,13 +53,55 @@ def route_after_extract(state: WorkflowState) -> str:
 
 
 def route_after_examine(state: WorkflowState) -> str:
-    if not state.get("error"):
-        return "update"
+    if state.get("error"):
+        if should_retry(state):
+            return "examine"
+        return "failed"
 
-    if should_retry(state):
-        return "examine"
+    run_id = state.get("run_id")
+    if not run_id:
+        return "commit"
 
-    return "failed"
+    from app.core.database import SessionLocal
+    from app.persistence.models.finding import Finding
+    from app.core.constants import ReviewDecision
+
+    db = SessionLocal()
+    try:
+        findings = db.query(Finding).filter(Finding.run_id == run_id).all()
+        if not findings:
+            return "commit"
+
+        pending = [f for f in findings if f.review_decision == ReviewDecision.PENDING]
+        if pending:
+            return "findings_review"
+    finally:
+        db.close()
+
+    return "commit"
+
+
+def route_after_findings_review(state: WorkflowState) -> str:
+    run_id = state.get("run_id")
+    if not run_id:
+        return "commit"
+
+    from app.core.database import SessionLocal
+    from app.persistence.models.finding import Finding
+    from app.core.constants import ReviewDecision
+
+    db = SessionLocal()
+    try:
+        pending = db.query(Finding).filter(
+            Finding.run_id == run_id,
+            Finding.review_decision == ReviewDecision.PENDING
+        ).all()
+        if pending:
+            return "findings_review"
+    finally:
+        db.close()
+
+    return "commit"
 
 
 def route_after_reconcile(state: WorkflowState) -> str:
@@ -128,6 +170,12 @@ def build_workflow(
     graph.add_node("human_review", human_review_node)
     graph.add_node("revise", revise)
     graph.add_node("examine", examine)
+
+    from app.workflow.nodes.update import CommitNode, findings_review_node
+    commit_node = CommitNode()
+    graph.add_node("findings_review", findings_review_node)
+    graph.add_node("commit", commit_node)
+
     graph.add_node("update", update)
     graph.add_node("failed", failed_node)
 
@@ -179,10 +227,22 @@ def build_workflow(
         route_after_examine,
         {
             "examine": "examine",
-            "update": "update",
+            "findings_review": "findings_review",
+            "commit": "commit",
             "failed": "failed",
         },
     )
+
+    graph.add_conditional_edges(
+        "findings_review",
+        route_after_findings_review,
+        {
+            "findings_review": "findings_review",
+            "commit": "commit",
+        },
+    )
+
+    graph.add_edge("commit", "update")
     graph.add_edge("update", END)
 
     graph.add_edge("failed", END)
