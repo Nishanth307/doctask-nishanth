@@ -6,11 +6,15 @@ interface WorkflowResultViewProps {
 }
 
 export function WorkflowResultView({ result, runStatus }: WorkflowResultViewProps) {
-  if (!result && runStatus !== "waiting_for_review") {
+  if (!result) {
     return (
       <section className="card workflow-result-section">
         <h2>Workflow Result</h2>
-        <p>No workflow result is available yet.</p>
+        <p>
+          {runStatus === "waiting_for_review"
+            ? "Workflow result is pending review completion."
+            : "No workflow result is available yet."}
+        </p>
       </section>
     );
   }
