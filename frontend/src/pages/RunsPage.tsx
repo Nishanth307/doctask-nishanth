@@ -310,9 +310,14 @@ export default function RunsPage() {
 
                 {run.documents && run.documents.length > 0 && (
                   <div className="run-card-documents">
-                    {run.documents.map((doc) => (
+                    {run.documents.filter(d => !d.is_rules).map((doc) => (
                       <div key={doc.id} className="run-card-document-item" title={doc.filename}>
                         📄 {doc.filename}
+                      </div>
+                    ))}
+                    {run.documents.filter(d => d.is_rules).map((doc) => (
+                      <div key={doc.id} className="run-card-document-item" title={doc.filename} style={{ fontStyle: "italic", color: "#64748b" }}>
+                        📋 {doc.filename} (Rules)
                       </div>
                     ))}
                   </div>

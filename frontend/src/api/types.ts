@@ -30,6 +30,7 @@ export type ReviewDecision =
 export interface RunDocumentSummary {
   id: string;
   filename: string;
+  is_rules: boolean;
 }
 
 export interface RunResponse {

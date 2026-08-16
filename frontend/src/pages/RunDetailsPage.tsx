@@ -186,6 +186,37 @@ function RunDetailsPage() {
             <strong>Error:</strong> {run.error_message}
           </p>
         )}
+
+        {run.documents && run.documents.length > 0 && (
+          <div style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+            <div>
+              <strong style={{ display: "block", marginBottom: "4px" }}>Source Documents</strong>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                {run.documents.filter(d => !d.is_rules).map((doc) => (
+                  <span key={doc.id} className="badge" style={{ backgroundColor: "#f1f5f9", padding: "4px 8px", borderRadius: "4px", fontSize: "13px" }}>
+                    📄 {doc.filename}
+                  </span>
+                ))}
+                {run.documents.filter(d => !d.is_rules).length === 0 && (
+                  <span style={{ color: "#64748b", fontSize: "13px" }}>No source documents</span>
+                )}
+              </div>
+            </div>
+            <div>
+              <strong style={{ display: "block", marginBottom: "4px" }}>Review Rules</strong>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                {run.documents.filter(d => d.is_rules).map((doc) => (
+                  <span key={doc.id} className="badge" style={{ backgroundColor: "#f1f5f9", padding: "4px 8px", borderRadius: "4px", fontSize: "13px" }}>
+                    📋 {doc.filename} (Playbook)
+                  </span>
+                ))}
+                {run.documents.filter(d => d.is_rules).length === 0 && (
+                  <span style={{ color: "#64748b", fontSize: "13px" }}>No review rules document</span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       {run.status === "pending" && (
