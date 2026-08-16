@@ -1,5 +1,6 @@
 import pytest
 from uuid import uuid4
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 from app.core.database import SessionLocal
 from app.persistence.models.run import Run
@@ -27,7 +28,9 @@ class TestWorkflowProgrammaticDriver:
         self.db.commit()
         self.db.close()
 
-    def test_complete_programmatic_workflow_flow(self):
+    @patch("app.workflow.service.WorkflowService.start")
+    def test_complete_programmatic_workflow_flow(self, mock_start):
+        mock_start.return_value = {"thread_id": "test_thread", "state": {"status": "completed"}}
         # 1. Create run through REST API
         response = self.client.post("/api/v1/runs", json={"name": "Programmatic Test Run"})
         assert response.status_code == 201
