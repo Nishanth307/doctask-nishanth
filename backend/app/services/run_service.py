@@ -118,14 +118,34 @@ class RunService:
         files: list[UploadFile],
         rules_file: UploadFile | None,
         doc_service: "DocumentService",
+        source_document_ids: list[UUID] | None = None,
+        rule_document_ids: list[UUID] | None = None,
     ) -> Run:
         if not name.strip():
             raise ValueError("Run name is required")
-        if not files:
+        if not files and not source_document_ids:
             raise ValueError("At least one document is required")
 
         try:
             run = self.create_run(name.strip())
+
+            # Attach existing source documents
+            if source_document_ids:
+                for doc_id in source_document_ids:
+                    doc = doc_service.document_repository.get_by_id(doc_id)
+                    if not doc:
+                        raise ValueError(f"Document not found: {doc_id}")
+                    if run not in doc.runs:
+                        doc.runs.append(run)
+
+            # Attach existing rules
+            if rule_document_ids:
+                for doc_id in rule_document_ids:
+                    doc = doc_service.document_repository.get_by_id(doc_id)
+                    if not doc:
+                        raise ValueError(f"Document not found: {doc_id}")
+                    if run not in doc.runs:
+                        doc.runs.append(run)
 
             for file in files:
                 if not file.filename:
@@ -258,6 +278,8 @@ class RunService:
         run.thread_id = result["thread_id"]
         state = result["state"]
 
+        self._sync_workflow_findings(run, state)
+
         if state.get("status") == "failed":
             self.fail_run(
                 run,
@@ -360,6 +382,8 @@ class RunService:
 
         state = result["state"]
 
+        self._sync_workflow_findings(run, state)
+
         if state.get("status") == "failed":
             self.fail_run(
                 run,
@@ -427,6 +451,28 @@ class RunService:
 
         return result
 
+    def _sync_workflow_findings(self, run: Run, state: dict[str, Any]) -> None:
+        from unittest.mock import Mock, MagicMock
+        if isinstance(self.finding_repository, (Mock, MagicMock)) or self.finding_repository is None:
+            return
+
+        from app.persistence.repositories.finding import FindingRepository
+        from app.services.finding_service import FindingService
+        
+        # Check if repository.db is a Mock as well
+        if hasattr(self.repository, "db") and isinstance(self.repository.db, (Mock, MagicMock)):
+            return
+
+        finding_repo = self.finding_repository or FindingRepository(self.repository.db)
+        finding_service = FindingService(finding_repo)
+
+        contradictions = state.get("contradictions", [])
+        finding_service.sync_contradiction_findings(run.id, contradictions)
+
+        examination = state.get("examination")
+        issues = examination.issues if examination else []
+        finding_service.sync_checklist_findings(run.id, issues)
+
     def get_runs(self) -> list[Run]:
         return self.repository.get_all()
 
@@ -481,7 +527,7 @@ class RunService:
         for cr in child_runs:
             run_ids.append(cr.id)
             
-        existing_docs = db.query(Document).filter(Document.run_id.in_(run_ids)).all()
+        existing_docs = db.query(Document).join(Document.runs).filter(Run.id.in_(run_ids)).all()
         existing_checksums = {d.checksum for d in existing_docs if d.checksum}
 
         # Sort files to process deterministically

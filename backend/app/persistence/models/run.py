@@ -57,7 +57,9 @@ class Run(UUIDMixin, TimestampMixin, Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     documents: Mapped[list[Document]] = relationship(
-        back_populates="run", cascade="all,delete-orphan"
+        "Document",
+        secondary="run_documents",
+        back_populates="runs",
     )
 
     findings: Mapped[list[Finding]] = relationship(

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import Enum, ForeignKey, String, Text
+from sqlalchemy import Enum, ForeignKey, String, Text, Table, Column, UUID as SQLUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.base import Base
@@ -15,13 +15,33 @@ if TYPE_CHECKING:
     from app.persistence.models.run import Run
 
 
+run_documents = Table(
+    "run_documents",
+    Base.metadata,
+    Column(
+        "run_id",
+        SQLUUID,
+        ForeignKey("runs.id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+    ),
+    Column(
+        "document_id",
+        SQLUUID,
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+    ),
+)
+
+
 class Document(UUIDMixin, TimestampMixin, Base):
     """Uploaded document belonging to a workflow run."""
 
     __tablename__ = "documents"
 
-    run_id: Mapped[UUID] = mapped_column(
-        ForeignKey("runs.id", ondelete="CASCADE"), nullable=False, index=True
+    run_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("runs.id", ondelete="SET NULL"), nullable=True, index=True
     )
 
     filename: Mapped[str] = mapped_column(
@@ -51,7 +71,9 @@ class Document(UUIDMixin, TimestampMixin, Base):
 
     extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    run: Mapped[Run] = relationship(
+    runs: Mapped[list[Run]] = relationship(
+        "Run",
+        secondary=run_documents,
         back_populates="documents",
     )
 

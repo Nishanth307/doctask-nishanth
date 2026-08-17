@@ -10,21 +10,22 @@ class DocumentCategory(StrEnum):
     INVOICE = "invoice"
     OTHER = "other"
 
+
 class ClassificationResult(BaseModel):
     document_type: DocumentCategory
-    confidence: float = Field(
-        ge=0.0,
-        le=1.0,
-    )
+    confidence: float = Field(ge=0.0, le=1.0)
     reasoning: str
 
+
 class ExtractedFact(BaseModel):
-    field: str 
-    value: str 
-    confidence: float = Field(
-        ge=0.0,
-        le=1.0
-    )
+    field: str
+    semantic_key: str = ""
+    value: str
+    confidence: float = Field(ge=0.0, le=1.0)
+
+    source_document: str = ""
+    source_text: str = ""
+
 
 class ExtractionResult(BaseModel):
     facts: list[ExtractedFact]
@@ -32,9 +33,6 @@ class ExtractionResult(BaseModel):
 
 class ExaminationResult(BaseModel):
     is_valid: bool
-    confidence: float = Field(
-        ge=0.0,
-        le=1.0,
-    )
+    confidence: float = Field(ge=0.0, le=1.0)
     issues: list[str]
     summary: str

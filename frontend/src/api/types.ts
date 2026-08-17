@@ -27,7 +27,7 @@ export type ReviewDecision =
   | "rejected"
   | "pending";
 
-export interface RunDocumentSummary {
+export interface  RunDocumentSummary {
   id: string;
   filename: string;
   is_rules: boolean;
@@ -46,16 +46,32 @@ export interface RunResponse {
   parent_id?: string | null;
 }
 
+export interface FindingSourceCitation {
+  document?: string;
+  value?: string;
+  source_text?: string;
+  confidence?: number;
+}
+
+export interface FindingCitation {
+  type?: string;
+  semantic_key?: string;
+  sources?: FindingSourceCitation[];
+  issues?: string[];
+  [key: string]: unknown;
+}
+
 export interface FindingResponse {
   id: string;
   title: string;
   description: string;
   severity: FindingSeverity;
   review_decision: ReviewDecision;
-  citation: Record<string, unknown> | null;
+  citation: FindingCitation | null;
   finding_metadata: Record<string, unknown> | null;
   created_at: string;
 }
+
 
 export interface ReportResponse {
   id: string;

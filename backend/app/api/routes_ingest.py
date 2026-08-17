@@ -115,3 +115,25 @@ async def upload_document(
     except Exception:
         db.rollback()
         raise
+
+
+documents_router = APIRouter(
+    prefix="/documents",
+    tags=["Documents"],
+)
+
+
+@documents_router.get("", response_model=list[DocumentResponse])
+def list_documents(
+    is_rules: bool | None = None,
+    db: Session = Depends(get_db),
+) -> list[DocumentResponse]:
+    """
+    List all uploaded documents.
+    Filter by is_rules to distinguish between source documents and review rules.
+    """
+    from app.persistence.models.document import Document
+    query = db.query(Document)
+    if is_rules is not None:
+        query = query.filter(Document.is_rules == is_rules)
+    return query.order_by(Document.created_at.desc()).all()

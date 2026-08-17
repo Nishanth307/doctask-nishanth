@@ -103,7 +103,27 @@ async def create_run(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Run name is required")
         
         uploaded_files = form.getlist("files")
-        if not uploaded_files:
+        uploaded_files = [f for f in uploaded_files if hasattr(f, "filename") and f.filename]
+
+        source_doc_ids_str = form.getlist("source_document_ids")
+        rule_doc_ids_str = form.getlist("rule_document_ids")
+
+        from uuid import UUID
+        source_document_ids = []
+        for sid in source_doc_ids_str:
+            if sid:
+                for item in str(sid).split(","):
+                    if item.strip():
+                        source_document_ids.append(UUID(item.strip()))
+
+        rule_document_ids = []
+        for rid in rule_doc_ids_str:
+            if rid:
+                for item in str(rid).split(","):
+                    if item.strip():
+                        rule_document_ids.append(UUID(item.strip()))
+
+        if not uploaded_files and not source_document_ids:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least one document is required")
 
         rules_file = form.get("rules_file")
@@ -121,6 +141,8 @@ async def create_run(
                 files=uploaded_files,
                 rules_file=rules_upload,
                 doc_service=doc_service,
+                source_document_ids=source_document_ids,
+                rule_document_ids=rule_document_ids,
             )
         except ValueError as exc:
             db.rollback()
@@ -310,13 +332,40 @@ def get_run_details(
             detail="Run not found",
         )
 
+    run_obj = result["run"]
+    findings_list = result.get("findings") or []
+
+    from app.core.constants import ReviewDecision
+
+    pending_count = sum(
+        1 for f in findings_list
+        if getattr(f, "review_decision", None) == ReviewDecision.PENDING
+        or getattr(f, "review_decision", None) == "pending"
+    )
+    approved_count = sum(
+        1 for f in findings_list
+        if getattr(f, "review_decision", None) == ReviewDecision.APPROVED
+        or getattr(f, "review_decision", None) == "approved"
+    )
+    rejected_count = sum(
+        1 for f in findings_list
+        if getattr(f, "review_decision", None) == ReviewDecision.REJECTED
+        or getattr(f, "review_decision", None) == "rejected"
+    )
+
+    run_response = RunResponse.model_validate(run_obj)
+    run_response.pending_finding_count = pending_count
+    run_response.approved_finding_count = approved_count
+    run_response.rejected_finding_count = rejected_count
+
     return RunDetailsResponse(
-        run=result["run"],
-        findings=result["findings"],
+        run=run_response,
+        findings=findings_list,
         report=result["report"],
         workflow_events=result["workflow_events"],
         workflow_result=result["workflow_result"],
     )
+
 
 
 @router.get(

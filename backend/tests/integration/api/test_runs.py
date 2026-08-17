@@ -275,3 +275,270 @@ def test_submit_invalid_decision(client_fixture, mock_run_service):
         json={"decision": "maybe"},
     )
     assert response.status_code == 422
+
+
+def test_get_run_details_includes_scoped_findings(client_fixture, db_session):
+    from datetime import datetime, timezone
+    from app.persistence.models.finding import Finding
+    from app.core.constants import FindingSeverity, ReviewDecision
+
+    # Create run 1
+    create_res1 = client_fixture.post("/api/v1/runs", json={"name": "Run 1"})
+    run1_id = create_res1.json()["id"]
+
+    # Create run 2
+    create_res2 = client_fixture.post("/api/v1/runs", json={"name": "Run 2"})
+    run2_id = create_res2.json()["id"]
+
+    # Add 2 findings to run 1
+    f1 = Finding(
+        id=uuid4(),
+        run_id=run1_id,
+        title="Conflicting Payment Due Period",
+        description="Conflicting values were found for 'Payment Due Period'.",
+        severity=FindingSeverity.ERROR,
+        review_decision=ReviewDecision.PENDING,
+        citation={
+            "type": "contradiction",
+            "semantic_key": "payment.due_period",
+            "sources": [
+                {"document": "doc1.docx", "value": "30 days", "confidence": 1.0},
+                {"document": "doc2.docx", "value": "45 days", "confidence": 1.0},
+            ],
+        },
+        finding_metadata={
+            "type": "contradiction",
+            "semantic_key": "payment.due_period",
+            "field": "Payment Due Period",
+        },
+        created_at=datetime.now(timezone.utc),
+    )
+    f2 = Finding(
+        id=uuid4(),
+        run_id=run1_id,
+        title="Conflicting Governing Law",
+        description="Conflicting values were found for 'Governing Law'.",
+        severity=FindingSeverity.ERROR,
+        review_decision=ReviewDecision.PENDING,
+        citation={"type": "contradiction"},
+        finding_metadata={"type": "contradiction"},
+        created_at=datetime.now(timezone.utc),
+    )
+    # Add 1 finding to run 2
+    f3 = Finding(
+        id=uuid4(),
+        run_id=run2_id,
+        title="Run 2 Finding",
+        description="Run 2 description",
+        severity=FindingSeverity.WARNING,
+        review_decision=ReviewDecision.PENDING,
+        citation=None,
+        finding_metadata=None,
+        created_at=datetime.now(timezone.utc),
+    )
+    db_session.add_all([f1, f2, f3])
+    db_session.commit()
+
+    # Query details for run 1
+    res1 = client_fixture.get(f"/api/v1/runs/{run1_id}/details")
+    assert res1.status_code == 200
+    data1 = res1.json()
+    assert len(data1["findings"]) == 2
+    f1_res = next(f for f in data1["findings"] if f["id"] == str(f1.id))
+    assert f1_res["title"] == "Conflicting Payment Due Period"
+    assert f1_res["severity"] == "error"
+    assert f1_res["review_decision"] == "pending"
+    assert f1_res["citation"]["type"] == "contradiction"
+    assert len(f1_res["citation"]["sources"]) == 2
+    assert f1_res["finding_metadata"]["semantic_key"] == "payment.due_period"
+
+    # Query details for run 2 (verifies scoping)
+    res2 = client_fixture.get(f"/api/v1/runs/{run2_id}/details")
+    assert res2.status_code == 200
+    data2 = res2.json()
+    assert len(data2["findings"]) == 1
+    assert data2["findings"][0]["id"] == str(f3.id)
+
+
+def test_run_details_three_pending_findings_counts(client_fixture, db_session):
+    from datetime import datetime, timezone
+    from app.persistence.models.finding import Finding
+    from app.core.constants import FindingSeverity, ReviewDecision
+
+    # 1. Create run with 3 pending findings
+    create_res = client_fixture.post("/api/v1/runs", json={"name": "ACME 3 Findings Run"})
+    run_id = create_res.json()["id"]
+
+    f1 = Finding(
+        id=uuid4(),
+        run_id=run_id,
+        title="Conflicting Payment Due Period",
+        description="Payment due 30 days vs 45 days",
+        severity=FindingSeverity.ERROR,
+        review_decision=ReviewDecision.PENDING,
+        citation={"type": "contradiction"},
+        finding_metadata={"type": "contradiction"},
+        created_at=datetime.now(timezone.utc),
+    )
+    f2 = Finding(
+        id=uuid4(),
+        run_id=run_id,
+        title="Conflicting Termination Notice Period",
+        description="Termination notice 60 days vs 30 days",
+        severity=FindingSeverity.ERROR,
+        review_decision=ReviewDecision.PENDING,
+        citation={"type": "contradiction"},
+        finding_metadata={"type": "contradiction"},
+        created_at=datetime.now(timezone.utc),
+    )
+    f3 = Finding(
+        id=uuid4(),
+        run_id=run_id,
+        title="Conflicting Governing Law",
+        description="New York vs California",
+        severity=FindingSeverity.ERROR,
+        review_decision=ReviewDecision.PENDING,
+        citation={"type": "contradiction"},
+        finding_metadata={"type": "contradiction"},
+        created_at=datetime.now(timezone.utc),
+    )
+    db_session.add_all([f1, f2, f3])
+    db_session.commit()
+
+    # 2. GET run details
+    res = client_fixture.get(f"/api/v1/runs/{run_id}/details")
+    assert res.status_code == 200
+    data = res.json()
+
+    # 3. Assert response
+    assert len(data["findings"]) == 3
+    assert data["run"]["pending_finding_count"] == 3
+    assert data["run"]["approved_finding_count"] == 0
+    assert data["run"]["rejected_finding_count"] == 0
+
+
+def test_run_details_mixed_decision_findings(client_fixture, db_session):
+    from datetime import datetime, timezone
+    from app.persistence.models.finding import Finding
+    from app.core.constants import FindingSeverity, ReviewDecision
+
+    # 1. Create a run
+    create_res = client_fixture.post("/api/v1/runs", json={"name": "Mixed Decisions Run"})
+    run_id = create_res.json()["id"]
+
+    # 2. Persist 3 findings: one pending, one approved, one rejected
+    f_pending = Finding(
+        id=uuid4(),
+        run_id=run_id,
+        title="Pending Finding",
+        description="A pending contradiction",
+        severity=FindingSeverity.ERROR,
+        review_decision=ReviewDecision.PENDING,
+        citation={"type": "contradiction"},
+        finding_metadata={"type": "contradiction"},
+        created_at=datetime.now(timezone.utc),
+    )
+    f_approved = Finding(
+        id=uuid4(),
+        run_id=run_id,
+        title="Approved Finding",
+        description="An approved contradiction",
+        severity=FindingSeverity.ERROR,
+        review_decision=ReviewDecision.APPROVED,
+        citation={"type": "contradiction"},
+        finding_metadata={"type": "contradiction"},
+        created_at=datetime.now(timezone.utc),
+    )
+    f_rejected = Finding(
+        id=uuid4(),
+        run_id=run_id,
+        title="Rejected Finding",
+        description="A rejected contradiction",
+        severity=FindingSeverity.WARNING,
+        review_decision=ReviewDecision.REJECTED,
+        citation={"type": "contradiction"},
+        finding_metadata={"type": "contradiction"},
+        created_at=datetime.now(timezone.utc),
+    )
+    db_session.add_all([f_pending, f_approved, f_rejected])
+    db_session.commit()
+
+    # 4. Call GET /runs/{run_id}/details
+    res = client_fixture.get(f"/api/v1/runs/{run_id}/details")
+    # 5. Assert status_code == 200
+    assert res.status_code == 200
+    data = res.json()
+
+    # 6. Assert len(findings) == 3
+    assert len(data["findings"]) == 3
+
+    # 7. Assert all finding IDs are present
+    response_ids = {f["id"] for f in data["findings"]}
+    assert str(f_pending.id) in response_ids
+    assert str(f_approved.id) in response_ids
+    assert str(f_rejected.id) in response_ids
+
+    # 8. Assert approved/rejected findings are still returned
+    decisions = {f["id"]: f["review_decision"] for f in data["findings"]}
+    assert decisions[str(f_pending.id)] == "pending"
+    assert decisions[str(f_approved.id)] == "approved"
+    assert decisions[str(f_rejected.id)] == "rejected"
+
+    assert data["run"]["pending_finding_count"] == 1
+    assert data["run"]["approved_finding_count"] == 1
+    assert data["run"]["rejected_finding_count"] == 1
+
+
+def test_run_details_completed_run_returns_findings(client_fixture, db_session):
+    from datetime import datetime, timezone
+    from app.persistence.models.finding import Finding
+    from app.persistence.models.run import Run
+    from app.core.constants import FindingSeverity, ReviewDecision, RunStatus, WorkflowStage
+
+    # 1. Create a run and mark it completed
+    create_res = client_fixture.post("/api/v1/runs", json={"name": "Completed Run"})
+    run_id = create_res.json()["id"]
+
+    run = db_session.query(Run).filter(Run.id == run_id).first()
+    run.status = RunStatus.COMPLETED
+    run.stage = WorkflowStage.COMMIT
+    run.completed_at = datetime.now(timezone.utc)
+
+    # 2. Add findings to the completed run
+    f1 = Finding(
+        id=uuid4(),
+        run_id=run_id,
+        title="Completed Run Finding 1",
+        description="Finding description",
+        severity=FindingSeverity.ERROR,
+        review_decision=ReviewDecision.APPROVED,
+        citation={"type": "contradiction"},
+        finding_metadata={"type": "contradiction"},
+        created_at=datetime.now(timezone.utc),
+    )
+    f2 = Finding(
+        id=uuid4(),
+        run_id=run_id,
+        title="Completed Run Finding 2",
+        description="Finding description 2",
+        severity=FindingSeverity.WARNING,
+        review_decision=ReviewDecision.REJECTED,
+        citation={"type": "contradiction"},
+        finding_metadata={"type": "contradiction"},
+        created_at=datetime.now(timezone.utc),
+    )
+    db_session.add_all([f1, f2])
+    db_session.commit()
+
+    # 3. Call GET /runs/{run_id}/details
+    res = client_fixture.get(f"/api/v1/runs/{run_id}/details")
+    assert res.status_code == 200
+    data = res.json()
+
+    # 4. Assert findings are still returned when run is completed
+    assert len(data["findings"]) == 2
+    assert data["run"]["status"] == "completed"
+    assert data["run"]["stage"] == "commit"
+    finding_ids = [f["id"] for f in data["findings"]]
+    assert str(f1.id) in finding_ids
+    assert str(f2.id) in finding_ids

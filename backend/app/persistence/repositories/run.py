@@ -22,17 +22,32 @@ class RunRepository(BaseRepository[Run]):
 
         return list(self.db.scalars(statement).all())
 
+    def get_by_id(self, entity_id: UUID) -> Run | None:
+        statement = (
+            select(Run)
+            .options(
+                selectinload(Run.documents),
+                selectinload(Run.findings),
+            )
+            .where(Run.id == entity_id)
+        )
+        return self.db.scalar(statement)
+
     def get_with_documents(self, run_id: UUID) -> Run | None:
-        return self.db.get(Run, run_id)
+        return self.get_by_id(run_id)
 
     def get_all(self) -> list[Run]:
         statement = (
             select(Run)
-            .options(selectinload(Run.documents))
+            .options(
+                selectinload(Run.documents),
+                selectinload(Run.findings),
+            )
             .order_by(Run.created_at.desc())
         )
 
         return list(self.db.scalars(statement).all())
+
 
 
 # The repository knows how to query Run, but it doesn't know why you're running the workflow.

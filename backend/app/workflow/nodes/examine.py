@@ -18,6 +18,31 @@ class ExamineNode:
         state: WorkflowState,
     ) -> WorkflowState:
         retry_count = state.get("retry_count", 0)
+        contradictions = state.get("contradictions", [])
+
+        if contradictions:
+            from app.workflow.conflicts import build_contradiction_examination
+            result = build_contradiction_examination(contradictions)
+            print("========== EXAMINATION DEBUG ==========")
+            print("CONTRADICTIONS:")
+            print(contradictions)
+
+            print("EXAMINATION:")
+            print(result)
+
+            print("ISSUES:")
+            print(result.issues)
+
+            print("IS VALID:")
+            print(result.is_valid)
+
+            print("=======================================")
+            return {
+                **state,
+                "examination": result,
+                "error": None,
+            }
+
 
         try:
             model = self.model_factory.create_model(
@@ -67,12 +92,13 @@ User-supplied review rules / checklist:
 {rules_text}
 
 Determine whether the extracted information and source documents violate or conform to the user-supplied review rules/checklist.
-Do not invent checklist rules. If the user-supplied rules are not violated, return is_valid=True and an empty list of issues.
+If any mandatory requirement in the checklist is missing, incomplete, unsupported, or violated by the document, flag it as an issue in issues.
+Do not invent checklist rules. If the user-supplied rules are fully satisfied, return is_valid=True and an empty list of issues.
 
 Return:
-- is_valid: whether the document/facts conform to the user-supplied review rules
+- is_valid: whether the document/facts conform to the user-supplied review rules (False if any rule is violated or missing)
 - confidence: confidence between 0 and 1
-- issues: a list of specific issues found (each issue should describe the violation and reference the source/rule)
+- issues: a list of specific issues found (each issue describing the violation/missing requirement and rule reference)
 - summary: a concise examination summary
 """
             else:
@@ -93,8 +119,7 @@ Extracted facts:
 
 {extracted_facts}
 
-Determine whether the extracted information is valid and
-consistent with the document.
+Determine whether the extracted information is valid and consistent with the document.
 
 Return:
 - is_valid: whether the extracted information is valid
@@ -103,21 +128,35 @@ Return:
 - summary: a concise examination summary
 
 Do not invent information.
-Only make conclusions supported by the document and
-the extracted facts.
-
-Return an examination result.
+Only make conclusions supported by the document and the extracted facts.
 """
+
 
             result: ExaminationResult = (
                 structured_model.invoke(prompt)
             )
+
+            print("========== EXAMINATION DEBUG ==========")
+            print("CONTRADICTIONS:")
+            print(contradictions)
+
+            print("EXAMINATION:")
+            print(result)
+
+            print("ISSUES:")
+            print(result.issues)
+
+            print("IS VALID:")
+            print(result.is_valid)
+
+            print("=======================================")
 
             return {
                 **state,
                 "examination": result,
                 "error": None,
             }
+
 
         except Exception as exc:
             return {

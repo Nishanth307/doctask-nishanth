@@ -43,7 +43,8 @@ export function ReviewQueue({
     }
   };
 
-  const hasPendingFindings = findings.some((f) => f.review_decision === "pending");
+  const pendingFindingsCount = findings.filter((f) => f.review_decision === "pending").length;
+  const hasPendingFindings = pendingFindingsCount > 0;
 
   return (
     <section className="card review-queue-section" style={{ marginTop: "24px", border: "2px solid #3b82f6", padding: "20px" }}>
@@ -57,7 +58,19 @@ export function ReviewQueue({
           ✓ No findings were produced. You can proceed directly to commit the deliverable.
         </div>
       ) : (
-        <div className="review-findings-list" style={{ display: "flex", flexDirection: "column", gap: "16px", marginBottom: "20px" }}>
+        <>
+          {hasPendingFindings ? (
+            <div style={{ padding: "12px", backgroundColor: "#fffbeb", border: "1px solid #fef3c7", borderRadius: "6px", color: "#b45309", marginBottom: "16px" }}>
+              ⚠ {pendingFindingsCount} {pendingFindingsCount === 1 ? "finding requires" : "findings require"} human review.
+            </div>
+          ) : (
+            <div style={{ padding: "12px", backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "6px", color: "#15803d", marginBottom: "16px" }}>
+              ✓ All {findings.length} findings have been reviewed. You can now submit the final decision below to resume the workflow.
+            </div>
+          )}
+
+          <div className="review-findings-list" style={{ display: "flex", flexDirection: "column", gap: "16px", marginBottom: "20px" }}>
+
           {findings.map((finding: FindingResponse) => {
             const isSubmitting = !!submittingIds[finding.id];
 
@@ -93,11 +106,52 @@ export function ReviewQueue({
                 <p style={{ margin: "8px 0" }}>{finding.description}</p>
 
                 <div style={{ display: "flex", gap: "16px", fontSize: "13px", color: "#64748b", margin: "8px 0" }}>
-                  <span><strong>Severity:</strong> {finding.severity.toUpperCase()}</span>
-                  {finding.citation && (
-                    <span><strong>Citation:</strong> {JSON.stringify(finding.citation)}</span>
-                  )}
+                  <span>
+                    <strong>Severity:</strong>{" "}
+                    <span style={{ fontWeight: "bold", color: finding.severity === "error" || finding.severity === "critical" ? "#dc2626" : "#475569" }}>
+                      {finding.severity.toUpperCase()}
+                    </span>
+                  </span>
+                  <span>
+                    <strong>Status:</strong>{" "}
+                    <span style={{ fontWeight: "bold", textTransform: "uppercase" }}>
+                      {finding.review_decision}
+                    </span>
+                  </span>
                 </div>
+
+                {finding.citation?.sources && Array.isArray(finding.citation.sources) && finding.citation.sources.length > 0 && (
+                  <div style={{ marginTop: "12px", marginBottom: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <strong style={{ fontSize: "13px", color: "#334155" }}>Source Citations & Conflicting Values:</strong>
+                    {finding.citation.sources.map((src, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          backgroundColor: "#f8fafc",
+                          border: "1px solid #e2e8f0",
+                          borderRadius: "6px",
+                          padding: "8px 12px",
+                          fontSize: "13px",
+                        }}
+                      >
+                        <div style={{ fontWeight: 600, color: "#1e293b", marginBottom: "3px" }}>
+                          📄 Source: {src.document || "Document"}
+                        </div>
+                        {src.value && (
+                          <div style={{ color: "#0f172a", marginBottom: "2px" }}>
+                            <strong>Value:</strong> &ldquo;{src.value}&rdquo;
+                          </div>
+                        )}
+                        {src.source_text && (
+                          <div style={{ color: "#64748b", fontStyle: "italic", fontSize: "12px" }}>
+                            &ldquo;{src.source_text}&rdquo;
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
 
                 <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
                   <button
@@ -135,8 +189,11 @@ export function ReviewQueue({
               </article>
             );
           })}
-        </div>
+          </div>
+        </>
       )}
+
+
 
       <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: "16px", marginTop: "16px" }}>
         <h3>Submit Final Review Decision</h3>

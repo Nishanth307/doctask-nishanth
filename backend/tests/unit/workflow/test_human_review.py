@@ -50,7 +50,7 @@ class TestHumanReview:
         state = {
             "run_id": run_id,
             "document_ids": [],
-            "documents": [],
+            "documents": [{"filename": "doc.pdf", "text": "Contract text"}],
             "classification": {},
             "extracted_facts": [],
             "contradictions": [],
@@ -89,7 +89,7 @@ class TestHumanReview:
         state = {
             "run_id": run_id,
             "document_ids": [],
-            "documents": [],
+            "documents": [{"filename": "doc.pdf", "text": "Contract text"}],
             "classification": {},
             "extracted_facts": [],
             "contradictions": [],
@@ -131,7 +131,7 @@ class TestHumanReview:
         state = {
             "run_id": run_id,
             "document_ids": [],
-            "documents": [],
+            "documents": [{"filename": "doc.pdf", "text": "Contract text"}],
             "classification": {},
             "extracted_facts": [],
             "contradictions": [],

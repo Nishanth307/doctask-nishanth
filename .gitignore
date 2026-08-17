@@ -217,6 +217,10 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# DocTask local storage uploads
-storage/uploads/
-backend/storage/uploads/
+# DocTask local storage uploads and document files
+storage/
+backend/storage/
+*.pdf
+*.txt
+!requirements.txt
+

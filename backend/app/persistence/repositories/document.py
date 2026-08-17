@@ -12,9 +12,11 @@ class DocumentRepository(BaseRepository[Document]):
         super().__init__(db, Document)
 
     def get_by_run_id(self, run_id: UUID) -> list[Document]:
+        from app.persistence.models.run import Run
         statement = (
             select(Document)
-            .where(Document.run_id == run_id)
+            .join(Document.runs)
+            .where(Run.id == run_id)
             .order_by(Document.created_at.asc())
         )
 

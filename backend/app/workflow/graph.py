@@ -64,10 +64,23 @@ def route_after_examine(state: WorkflowState) -> str:
 
     from app.core.database import SessionLocal
     from app.persistence.models.finding import Finding
+    from app.persistence.repositories.finding import FindingRepository
+    from app.services.finding_service import FindingService
     from app.core.constants import ReviewDecision
 
     db = SessionLocal()
     try:
+        finding_repo = FindingRepository(db)
+        finding_service = FindingService(finding_repo)
+
+        contradictions = state.get("contradictions", [])
+        finding_service.sync_contradiction_findings(run_id, contradictions)
+
+        examination = state.get("examination")
+        issues = examination.issues if examination else []
+        finding_service.sync_checklist_findings(run_id, issues)
+        db.commit()
+
         findings = db.query(Finding).filter(Finding.run_id == run_id).all()
         if not findings:
             return "commit"
@@ -75,10 +88,14 @@ def route_after_examine(state: WorkflowState) -> str:
         pending = [f for f in findings if f.review_decision == ReviewDecision.PENDING]
         if pending:
             return "findings_review"
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 
     return "commit"
+
 
 
 def route_after_findings_review(state: WorkflowState) -> str:
@@ -105,10 +122,31 @@ def route_after_findings_review(state: WorkflowState) -> str:
 
 
 def route_after_reconcile(state: WorkflowState) -> str:
+    run_id = state.get("run_id")
+    if run_id:
+        from app.core.database import SessionLocal
+        from app.persistence.repositories.finding import FindingRepository
+        from app.services.finding_service import FindingService
+
+        db = SessionLocal()
+        try:
+            finding_repo = FindingRepository(db)
+            finding_service = FindingService(finding_repo)
+            contradictions = state.get("contradictions", [])
+            if contradictions:
+                finding_service.sync_contradiction_findings(run_id, contradictions)
+                db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
     if state.get("human_review_required", False):
         return "human_review"
 
     return "examine"
+
 
 
 def route_after_human_review(state: WorkflowState) -> str:
