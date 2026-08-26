@@ -5,7 +5,21 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings
 
-engine = create_engine(settings.DATABASE_URL, echo=settings.DEBUG, pool_pre_ping=True)
+
+def _normalize_db_url(url: str) -> str:
+    """
+    Render (and some other platforms) inject DATABASE_URL as postgresql:// or
+    postgres://, which SQLAlchemy routes to the psycopg2 driver.  We only
+    install psycopg (v3), so normalise any bare postgresql:// or postgres://
+    prefix to postgresql+psycopg:// before SQLAlchemy parses the URL.
+    """
+    for prefix in ("postgresql://", "postgres://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix):]
+    return url
+
+
+engine = create_engine(_normalize_db_url(settings.DATABASE_URL), echo=settings.DEBUG, pool_pre_ping=True)
 
 SessionLocal = sessionmaker(
     bind=engine,

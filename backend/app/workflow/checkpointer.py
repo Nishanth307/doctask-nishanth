@@ -8,7 +8,19 @@ _pool = None
 
 
 def get_conn_string() -> str:
-    return settings.DATABASE_URL.replace("postgresql+psycopg://", "postgresql://")
+    """Return a libpq-style connection string (postgresql://) for psycopg_pool.
+
+    Render injects DATABASE_URL as postgresql:// or postgres://.
+    Locally we use postgresql+psycopg://.  Strip the SQLAlchemy driver suffix
+    so psycopg_pool always receives the plain postgresql:// form.
+    """
+    url = settings.DATABASE_URL
+    # Strip SQLAlchemy driver specifier if present (local dev)
+    url = url.replace("postgresql+psycopg://", "postgresql://")
+    # Normalise postgres:// → postgresql:// (Render sometimes uses the short form)
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    return url
 
 
 def get_pool() -> ConnectionPool:
