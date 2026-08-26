@@ -17,10 +17,11 @@ from app.persistence.models import (
     WorkflowEvent,
 )
 from app.core.config import settings
+from app.core.database import _normalize_db_url
 
 config.set_main_option(
     "sqlalchemy.url",
-    settings.DATABASE_URL,
+    _normalize_db_url(settings.DATABASE_URL),
 )
 
 
