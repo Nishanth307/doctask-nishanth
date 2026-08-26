@@ -38,9 +38,17 @@ class WorkflowService:
             config=config,
         )
 
+        state_values = dict(result) if isinstance(result, dict) else {}
+        try:
+            snapshot = self.graph.get_state(config)
+            if hasattr(snapshot, "values") and isinstance(snapshot.values, dict) and snapshot.values:
+                state_values = {**state_values, **snapshot.values}
+        except Exception:
+            pass
+
         return {
             "thread_id": thread_id,
-            "state": result,
+            "state": state_values,
         }
 
     def resume(
@@ -63,9 +71,17 @@ class WorkflowService:
             config=config,
         )
 
+        state_values = dict(result) if isinstance(result, dict) else {}
+        try:
+            snapshot = self.graph.get_state(config)
+            if hasattr(snapshot, "values") and isinstance(snapshot.values, dict) and snapshot.values:
+                state_values = {**state_values, **snapshot.values}
+        except Exception:
+            pass
+
         return {
             "thread_id": thread_id,
-            "state": result,
+            "state": state_values,
         }
 
     def get_state(

@@ -28,19 +28,22 @@ def detect_contradictions(
         value = normalize_fact_value(
             fact.get("value", "")
         )
+        document = (
+            fact.get("source_document")
+            or fact.get("document_filename")
+            or ""
+        )
 
-        if not semantic_key or not value:
+        if not semantic_key or not value or not document:
             continue
 
         facts_by_key[semantic_key].append(fact)
 
-    contradictions = []
+    contradictions: list[dict[str, Any]] = []
 
     for semantic_key, semantic_facts in facts_by_key.items():
         distinct_values = {
-            normalize_fact_value(
-                fact.get("value", "")
-            )
+            normalize_fact_value(fact.get("value", ""))
             for fact in semantic_facts
         }
 
@@ -62,12 +65,25 @@ def detect_contradictions(
                     "field",
                     semantic_key,
                 ),
-                "values": semantic_facts,
+                "values": [
+                    {
+                        "field": fact.get("field"),
+                        "semantic_key": fact.get("semantic_key"),
+                        "value": fact.get("value"),
+                        "confidence": fact.get("confidence"),
+                        "source_document": (
+                            fact.get("source_document")
+                            or fact.get("document_filename")
+                        ),
+                        "source_text": fact.get("source_text"),
+                    }
+                    for fact in semantic_facts
+                ],
             }
         )
 
-
     return contradictions
+
 
 
 def build_contradiction_description(

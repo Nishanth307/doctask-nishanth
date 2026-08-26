@@ -466,12 +466,14 @@ class RunService:
         finding_repo = self.finding_repository or FindingRepository(self.repository.db)
         finding_service = FindingService(finding_repo)
 
-        contradictions = state.get("contradictions", [])
-        finding_service.sync_contradiction_findings(run.id, contradictions)
+        if "contradictions" in state and state["contradictions"] is not None:
+            contradictions = state.get("contradictions", [])
+            finding_service.sync_contradiction_findings(run.id, contradictions)
 
-        examination = state.get("examination")
-        issues = examination.issues if examination else []
-        finding_service.sync_checklist_findings(run.id, issues)
+        if "examination" in state and state["examination"] is not None:
+            examination = state.get("examination")
+            issues = examination.issues if examination else []
+            finding_service.sync_checklist_findings(run.id, issues)
 
     def get_runs(self) -> list[Run]:
         return self.repository.get_all()

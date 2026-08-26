@@ -19,29 +19,39 @@ class ExamineNode:
     ) -> WorkflowState:
         retry_count = state.get("retry_count", 0)
         contradictions = state.get("contradictions", [])
+        run_id = state.get("run_id")
 
-        if contradictions:
+        if run_id and contradictions:
+            from app.core.database import SessionLocal
+            from app.persistence.repositories.finding import FindingRepository
+            from app.services.finding_service import FindingService
+
+            db = SessionLocal()
+            try:
+                finding_repo = FindingRepository(db)
+                finding_service = FindingService(finding_repo)
+                finding_service.sync_contradiction_findings(run_id, contradictions)
+                db.commit()
+            except Exception:
+                db.rollback()
+                raise
+            finally:
+                db.close()
+
+        rules_text = "\n\n".join(
+            rule.get("text", "")
+            for rule in state.get("rules", [])
+        )
+
+        if contradictions and not rules_text:
             from app.workflow.conflicts import build_contradiction_examination
             result = build_contradiction_examination(contradictions)
-            print("========== EXAMINATION DEBUG ==========")
-            print("CONTRADICTIONS:")
-            print(contradictions)
-
-            print("EXAMINATION:")
-            print(result)
-
-            print("ISSUES:")
-            print(result.issues)
-
-            print("IS VALID:")
-            print(result.is_valid)
-
-            print("=======================================")
             return {
                 **state,
                 "examination": result,
                 "error": None,
             }
+
 
 
         try:
@@ -136,26 +146,30 @@ Only make conclusions supported by the document and the extracted facts.
                 structured_model.invoke(prompt)
             )
 
-            print("========== EXAMINATION DEBUG ==========")
-            print("CONTRADICTIONS:")
-            print(contradictions)
+            if run_id and result and result.issues:
 
-            print("EXAMINATION:")
-            print(result)
+                from app.core.database import SessionLocal
+                from app.persistence.repositories.finding import FindingRepository
+                from app.services.finding_service import FindingService
 
-            print("ISSUES:")
-            print(result.issues)
-
-            print("IS VALID:")
-            print(result.is_valid)
-
-            print("=======================================")
+                db = SessionLocal()
+                try:
+                    finding_repo = FindingRepository(db)
+                    finding_service = FindingService(finding_repo)
+                    finding_service.sync_checklist_findings(run_id, result.issues)
+                    db.commit()
+                except Exception:
+                    db.rollback()
+                    raise
+                finally:
+                    db.close()
 
             return {
                 **state,
                 "examination": result,
                 "error": None,
             }
+
 
 
         except Exception as exc:

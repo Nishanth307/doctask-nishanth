@@ -45,22 +45,16 @@ class FindingService:
                     f.title = title
                     f.description = description
                     f.citation = citation
-                    # base repository registers with session, flush happens at caller or db.commit()
-            else:
-                new_finding = Finding(
-                    run_id=run_id,
-                    title=title,
-                    description=description,
-                    severity=FindingSeverity.ERROR,
-                    review_decision=ReviewDecision.PENDING,
-                    citation=citation,
-                    finding_metadata={
+                    f.finding_metadata = {
                         "type": "contradiction",
                         "semantic_key": semantic_key,
                         "field": field,
-                    },
-                )
+                    }
+            else:
+                from app.workflow.conflicts import contradiction_to_finding
+                new_finding = contradiction_to_finding(run_id, contradiction)
                 self.repository.create(new_finding)
+
 
         # Clean up stale pending contradictions
         for key, f in existing_contradictions.items():
@@ -76,6 +70,12 @@ class FindingService:
     ) -> None:
         existing_findings = self.repository.get_by_run_id(run_id)
 
+        # Existing contradiction descriptions shouldn't be duplicated as policy violations
+        contradiction_descriptions = {
+            f.description for f in existing_findings
+            if (f.finding_metadata or {}).get("type") == "contradiction"
+        }
+
         existing_violations = {}
         for f in existing_findings:
             meta = f.finding_metadata or {}
@@ -87,8 +87,12 @@ class FindingService:
             if not issue_text.strip():
                 continue
 
+            if issue_text in contradiction_descriptions or "Conflicting values were found for" in issue_text:
+                continue
+
             active_issues.add(issue_text)
             title = "Policy Violation"
+
 
             if issue_text not in existing_violations:
                 new_finding = Finding(

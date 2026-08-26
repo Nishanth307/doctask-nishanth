@@ -122,6 +122,11 @@ def route_after_findings_review(state: WorkflowState) -> str:
 
 
 def route_after_reconcile(state: WorkflowState) -> str:
+    if state.get("error"):
+        if should_retry(state):
+            return "reconcile"
+        return "failed"
+
     run_id = state.get("run_id")
     if run_id:
         from app.core.database import SessionLocal
@@ -146,6 +151,8 @@ def route_after_reconcile(state: WorkflowState) -> str:
         return "human_review"
 
     return "examine"
+
+
 
 
 
@@ -243,10 +250,14 @@ def build_workflow(
         "reconcile",
         route_after_reconcile,
         {
+            "reconcile": "reconcile",
             "human_review": "human_review",
             "examine": "examine",
+            "failed": "failed",
         },
     )
+
+
 
     graph.add_conditional_edges(
         "human_review",

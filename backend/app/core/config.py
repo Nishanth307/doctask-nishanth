@@ -8,14 +8,20 @@ from app.core.constants.enums import GeminiModel, LLMProvider
 # later change to env variables
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+        env_file=(str(Path(__file__).resolve().parent.parent.parent.parent / ".env"), ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore"
     )
 
     APP_NAME: str = "DOCTask"
     APP_ENV: str = "development"
-    DEBUG: bool = True
+    DEBUG: bool = False  # Override to True in .env for local dev
 
+    # Comma-separated list of allowed origins.
+    # Local: set in .env → CORS_ORIGINS=http://localhost:5173
+    # Production: set in Render dashboard → e.g. https://doctask.vercel.app
     CORS_ORIGINS: str = "http://localhost:5173"
+
 
     API_V1_PREFIX: str = "/api/v1"
 

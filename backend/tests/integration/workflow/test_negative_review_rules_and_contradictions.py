@@ -316,7 +316,7 @@ class TestNegativeContradictionsAndReviewRules:
         }
         config = {"configurable": {"thread_id": str(run_id)}}
 
-        # First invoke: interrupts at human review due to contradiction
+        # First invoke: executes classify -> extract -> reconcile -> interrupts at human_review
         result = workflow.invoke(state, config)
         assert "__interrupt__" in result
 
@@ -325,13 +325,17 @@ class TestNegativeContradictionsAndReviewRules:
         assert len(db_findings) == 1
         assert db_findings[0].finding_metadata["type"] == "contradiction"
 
-        # Resume human review: approve
+        # Resume human review: approve -> goes to examine -> interrupts at findings_review
         result_resumed = workflow.invoke(Command(resume="approve"), config)
+        assert "__interrupt__" in result_resumed
 
-        # After resume and examine, findings review should interrupt if there are pending findings
+        # Check DB findings now contain both contradiction and policy violation
         db_session.expire_all()
         findings_after_examine = db_session.query(Finding).filter(Finding.run_id == run_id).all()
-        assert len(findings_after_examine) >= 1
+        assert len(findings_after_examine) == 2
+        types = {f.finding_metadata["type"] for f in findings_after_examine}
+        assert "contradiction" in types
+        assert "violation" in types
 
         # Approve all findings in DB
         for f in findings_after_examine:
@@ -348,11 +352,138 @@ class TestNegativeContradictionsAndReviewRules:
         assert report.approved is True
         assert "Conflicting contract term" in report.content
 
+
+    def test_contradiction_persistence_and_idempotency(self, db_session):
+        run_id = uuid4()
+        run = Run(id=run_id, name="Test Contradiction Idempotency Run")
+        db_session.add(run)
+        db_session.commit()
+
+        model_factory = MagicMock()
+        model = MagicMock()
+
+        class_res = ClassificationResult(
+            document_type=DocumentCategory.CONTRACT,
+            confidence=0.95,
+            reasoning="Contract document",
+        )
+
+        doc1_facts = ExtractionResult(
+            facts=[
+                ExtractedFact(
+                    field="governing law",
+                    semantic_key="agreement.governing_law",
+                    value="New York",
+                    confidence=0.95,
+                    source_document="contract1.pdf",
+                    source_text="Governed by the laws of New York.",
+                ),
+            ]
+        )
+        doc2_facts = ExtractionResult(
+            facts=[
+                ExtractedFact(
+                    field="governing law",
+                    semantic_key="agreement.governing_law",
+                    value="California",
+                    confidence=0.95,
+                    source_document="contract2.pdf",
+                    source_text="Governed by the laws of California.",
+                ),
+            ]
+        )
+
+        extraction_iter = iter([doc1_facts, doc2_facts])
+
+        def side_effect_with_structured_output(schema):
+            mock_structured = MagicMock()
+            if schema == ClassificationResult:
+                mock_structured.invoke.return_value = class_res
+            elif schema == ExtractionResult:
+                mock_structured.invoke.side_effect = lambda *args, **kwargs: next(extraction_iter)
+            return mock_structured
+
+        model.with_structured_output.side_effect = side_effect_with_structured_output
+        model_factory.create_model.return_value = model
+
+        workflow = build_workflow(model_factory)
+
+        state = {
+            "run_id": run_id,
+            "document_ids": [],
+            "documents": [
+                {"id": "doc1", "filename": "contract1.pdf", "text": "Governed by New York law."},
+                {"id": "doc2", "filename": "contract2.pdf", "text": "Governed by California law."},
+            ],
+            "rules": [],
+            "retry_count": 0,
+            "max_retries": 3,
+        }
+        config = {"configurable": {"thread_id": str(run_id)}}
+
+        # 1. First execution through examination
+        result = workflow.invoke(state, config)
+
+        # 2. Assert workflow reached the review gate
+        assert "__interrupt__" in result
+
+        # 3. Query Finding by run_id
+        db_findings = db_session.query(Finding).filter(Finding.run_id == run_id).all()
+
+        # 4. Assert Finding count > 0
+        assert len(db_findings) > 0
+
+        # 5. Assert every contradiction produces exactly one Finding
+        assert len(db_findings) == 1
+        finding = db_findings[0]
+
+        # 6. Assert review_decision == PENDING
+        assert finding.review_decision == ReviewDecision.PENDING
+        assert finding.severity == FindingSeverity.ERROR
+        assert finding.title == "Conflicting governing law"
+
+        # 7. Assert citation contains both conflicting source documents
+        assert finding.citation is not None
+        assert finding.citation["type"] == "contradiction"
+        assert len(finding.citation["sources"]) == 2
+        source_docs = {s["document"] for s in finding.citation["sources"]}
+        assert "contract1.pdf" in source_docs
+        assert "contract2.pdf" in source_docs
+
+        # 8. Re-run persistence step directly to verify idempotency (no duplicates)
+        from app.persistence.repositories.finding import FindingRepository
+        from app.services.finding_service import FindingService
+        finding_repo = FindingRepository(db_session)
+        finding_service = FindingService(finding_repo)
+
+        contradictions = [
+            {
+                "semantic_key": "agreement.governing_law",
+                "field": "governing law",
+                "values": [
+                    {"source_document": "contract1.pdf", "value": "New York", "source_text": "Governed by New York law.", "confidence": 0.95},
+                    {"source_document": "contract2.pdf", "value": "California", "source_text": "Governed by California law.", "confidence": 0.95},
+                ]
+            }
+        ]
+
+        # Call sync a second time
+        finding_service.sync_contradiction_findings(run_id, contradictions)
+        db_session.commit()
+
+        # Assert no duplicate findings created
+        db_session.expire_all()
+        findings_after_second_sync = db_session.query(Finding).filter(Finding.run_id == run_id).all()
+        assert len(findings_after_second_sync) == 1
+        assert findings_after_second_sync[0].id == finding.id
+        assert findings_after_second_sync[0].review_decision == ReviewDecision.PENDING
+
     def test_negative_missing_mandatory_insurance_requirement(self, db_session):
         run_id = uuid4()
         run = Run(id=run_id, name="Test Missing Insurance Requirement Run")
         db_session.add(run)
         db_session.commit()
+
 
         model_factory = MagicMock()
         model = MagicMock()
