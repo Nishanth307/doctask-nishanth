@@ -14,6 +14,17 @@ configure_logging()
 async def lifespan(app: FastAPI):
     cp = create_checkpointer()
     cp.setup()
+    # Pre-warm the embedding model so it's in RAM before first request.
+    # Without this, Render's 30-second proxy timeout triggers on the first
+    # multipart upload while SentenceTransformer loads its weights.
+    try:
+        from app.services.providers.huggingface_embeddings import HuggingFaceEmbeddingService
+        logger.info("pre_warming_embedding_model")
+        _svc = HuggingFaceEmbeddingService()
+        _svc.embed_text("warmup")
+        logger.info("embedding_model_ready")
+    except Exception as exc:
+        logger.warning(f"embedding_warmup_failed: {exc}")
     yield
 
 
