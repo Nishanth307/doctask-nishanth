@@ -43,6 +43,13 @@ app.include_router(docs_router, prefix="/api/v1")
 logger.info("application_started")
 
 
+@app.get("/")
+@app.head("/")
+def root():
+    return {"status": "ok", "message": "DocTask API is running"}
+
+
 @app.get("/health")
+@app.head("/health")
 def health():
     return {"status": "healthy"}

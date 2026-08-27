@@ -39,7 +39,8 @@ ENV HF_HOME=/app/.cache/huggingface
 ENV TRANSFORMERS_CACHE=/app/.cache/huggingface
 RUN python -c "import torch; torch.set_num_threads(1); from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
 
-# Expose the port Render binds to
+# Expose the port Render binds to (Render defaults to 10000)
+EXPOSE 10000
 EXPOSE 8000
 
 # Run Alembic migrations then start uvicorn
