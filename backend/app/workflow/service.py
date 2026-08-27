@@ -10,6 +10,15 @@ if TYPE_CHECKING:
 
 from app.workflow.graph import build_workflow
 
+_cached_workflow = None
+
+
+def get_workflow_graph():
+    global _cached_workflow
+    if _cached_workflow is None:
+        _cached_workflow = build_workflow()
+    return _cached_workflow
+
 
 class WorkflowService:
     def __init__(
@@ -17,7 +26,7 @@ class WorkflowService:
         graph=None,
         result_service: "WorkflowResultService" | None = None,
     ) -> None:
-        self.graph = graph or build_workflow()
+        self.graph = graph or get_workflow_graph()
         self.result_service = result_service
 
     def start(

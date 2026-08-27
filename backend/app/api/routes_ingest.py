@@ -35,7 +35,10 @@ def get_document_service(
     )
 
     chunker = TextChunker()
-    embedding_service = HuggingFaceEmbeddingService()
+    global _embedding_service_instance
+    if "_embedding_service_instance" not in globals() or _embedding_service_instance is None:
+        _embedding_service_instance = HuggingFaceEmbeddingService()
+    embedding_service = _embedding_service_instance
     vector_repository = VectorRepository(db)
     
     ingestion_service = IngestionService(
