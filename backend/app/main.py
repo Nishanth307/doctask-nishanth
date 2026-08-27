@@ -7,13 +7,30 @@ from app.api.routes_runs import router as runs_router
 from app.core.logging import configure_logging, logger
 from app.workflow.checkpointer import create_checkpointer
 
-configure_logging()
+import threading
+
+
+def _warmup_embeddings():
+    try:
+        import torch
+        torch.set_num_threads(1)
+        from sentence_transformers import SentenceTransformer
+        from app.services.providers.huggingface_embeddings import _model_cache
+        _model_cache["sentence-transformers/all-MiniLM-L6-v2"] = SentenceTransformer(
+            "sentence-transformers/all-MiniLM-L6-v2", device="cpu"
+        )
+    except Exception:
+        pass
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     cp = create_checkpointer()
-    cp.setup()
+    try:
+        cp.setup()
+    except Exception:
+        pass
+    threading.Thread(target=_warmup_embeddings, daemon=True).start()
     yield
 
 
