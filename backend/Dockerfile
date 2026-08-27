@@ -34,8 +34,10 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Copy backend application code from the backend/ subdirectory
 COPY backend/ .
 
-# Create storage directories (ephemeral on free Render tier)
-RUN mkdir -p storage/uploads storage/generated storage/watch
+# Set HuggingFace cache directory and pre-download model during build
+ENV HF_HOME=/app/.cache/huggingface
+ENV TRANSFORMERS_CACHE=/app/.cache/huggingface
+RUN python -c "import torch; torch.set_num_threads(1); from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
 
 # Expose the port Render binds to
 EXPOSE 8000
