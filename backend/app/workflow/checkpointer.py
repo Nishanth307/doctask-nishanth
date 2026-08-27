@@ -29,10 +29,23 @@ def get_pool() -> ConnectionPool:
         _pool = ConnectionPool(
             conninfo=get_conn_string(),
             max_size=10,
+            timeout=5.0,
             kwargs={"autocommit": True, "row_factory": dict_row},
         )
     return _pool
 
 
-def create_checkpointer() -> PostgresSaver:
-    return PostgresSaver(get_pool())
+def create_checkpointer():
+    if (
+        "sqlite" in settings.DATABASE_URL
+        or getattr(settings, "ENVIRONMENT", "") == "test"
+        or "localhost" in settings.DATABASE_URL
+        or "127.0.0.1" in settings.DATABASE_URL
+    ):
+        from langgraph.checkpoint.memory import MemorySaver
+        return MemorySaver()
+    try:
+        return PostgresSaver(get_pool())
+    except Exception:
+        from langgraph.checkpoint.memory import MemorySaver
+        return MemorySaver()

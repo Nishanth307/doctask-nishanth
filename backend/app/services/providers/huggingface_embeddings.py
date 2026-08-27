@@ -1,5 +1,3 @@
-import torch
-
 from app.services.embedding_types import EmbeddingModel
 from app.services.embeddings import EmbeddingService
 
@@ -14,6 +12,7 @@ class HuggingFaceEmbeddingService(EmbeddingService):
     def _model(self):
         if self.model_name not in _model_cache:
             try:
+                import torch
                 torch.set_num_threads(1)
                 from sentence_transformers import SentenceTransformer
                 _model_cache[self.model_name] = SentenceTransformer(self.model_name, device="cpu")

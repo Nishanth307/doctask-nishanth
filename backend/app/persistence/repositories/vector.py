@@ -33,7 +33,7 @@ class VectorRepository:
             document_id=document_id,
             chunk_index=chunk_index,
             text=text,
-            metadata=metadata,
+            chunk_metadata=metadata if metadata is not None else {},
             embedding=embedding,
         )
 

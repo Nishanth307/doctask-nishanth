@@ -46,7 +46,7 @@ class TestVectorRepository:
         assert result.document_id == document_id
         assert result.chunk_index == 0
         assert result.text == "Hello world"
-        assert result.metadata == {
+        assert getattr(result, "chunk_metadata", getattr(result, "metadata", None)) == {
             "page": 1,
         }
 
