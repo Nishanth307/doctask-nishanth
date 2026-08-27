@@ -56,7 +56,24 @@ class Settings(BaseSettings):
     def absolute_watch_dir(self) -> Path:
         return get_absolute_path(self.DOCTASK_WATCH_FOLDER)
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+def _find_project_root() -> Path:
+    candidates = [
+        Path.cwd(),
+        Path(__file__).resolve().parent.parent.parent.parent,
+        Path(__file__).resolve().parent.parent.parent,
+        Path("/app"),
+    ]
+    for candidate in candidates:
+        if candidate.exists() and (
+            (candidate / "storage").exists()
+            or (candidate / "requirements.txt").exists()
+            or (candidate / "backend").exists()
+            or candidate == Path("/app")
+        ):
+            return candidate.resolve()
+    return Path.cwd().resolve()
+
+PROJECT_ROOT = _find_project_root()
 STORAGE_ROOT = PROJECT_ROOT / "storage"
 
 # Define properties to get absolute paths independent of process cwd
