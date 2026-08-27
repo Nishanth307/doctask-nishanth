@@ -71,10 +71,13 @@ class DocumentService:
 
         document = self.document_repository.create(document)
 
-        from app.core.config import PROJECT_ROOT
-        abs_path = Path(document.file_path)
-        if not abs_path.is_absolute():
-            abs_path = (PROJECT_ROOT / abs_path).resolve()
+        if hasattr(self.storage, "get_local_path"):
+            abs_path = self.storage.get_local_path(document.file_path)
+        else:
+            from app.core.config import PROJECT_ROOT
+            abs_path = Path(document.file_path)
+            if not abs_path.is_absolute():
+                abs_path = (PROJECT_ROOT / abs_path).resolve()
 
         from unittest.mock import Mock, MagicMock
         is_mock_storage = isinstance(self.storage, (Mock, MagicMock)) or hasattr(self.storage, "mock_calls")

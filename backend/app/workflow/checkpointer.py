@@ -43,9 +43,17 @@ def create_checkpointer():
         or "127.0.0.1" in settings.DATABASE_URL
     ):
         from langgraph.checkpoint.memory import MemorySaver
-        return MemorySaver()
+        saver = MemorySaver()
+        if not hasattr(saver, "setup"):
+            saver.setup = lambda: None
+        return saver
+
     try:
-        return PostgresSaver(get_pool())
+        saver = PostgresSaver(get_pool())
+        return saver
     except Exception:
         from langgraph.checkpoint.memory import MemorySaver
-        return MemorySaver()
+        saver = MemorySaver()
+        if not hasattr(saver, "setup"):
+            saver.setup = lambda: None
+        return saver

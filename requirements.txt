@@ -25,8 +25,9 @@ langgraph-checkpoint-postgres
 psycopg_pool
 
 # =========================
-# Google Gemini
+# Google Cloud Storage & Gemini
 # =========================
+google-cloud-storage
 google-generativeai
 
 # =========================

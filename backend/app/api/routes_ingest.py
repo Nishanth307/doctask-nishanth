@@ -23,7 +23,9 @@ def get_document_service(
     document_repository = DocumentRepository(db)
     run_repository = RunRepository(db)
 
-    storage = StorageService(settings.UPLOAD_DIRECTORY)
+    from app.storage.factory import get_storage_adapter
+
+    storage = get_storage_adapter()
 
     from app.ingestion.chunker import TextChunker
     from app.ingestion.loaders.factory import DocumentLoaderFactory

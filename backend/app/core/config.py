@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+psycopg://user:1234@localhost:5432/doctask"
     UPLOAD_DIRECTORY: str = "storage/uploads"
     GENERATED_DIRECTORY: str = "storage/generated"
+    STORAGE_BACKEND: str = "local"  # "local" or "gcs"
+    GCS_BUCKET_NAME: str | None = None
 
     EMBEDDING_PROVIDER: str = "google"
 
