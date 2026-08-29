@@ -1,0 +1,14 @@
+.git
+.gitignore
+venv/
+.venv/
+env/
+frontend/
+node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+storage/
+backend/storage/
+*.pdf
+!requirements.txt
