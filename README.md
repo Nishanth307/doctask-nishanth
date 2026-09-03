@@ -214,3 +214,36 @@ DocTask implements robust model fallback mechanism to secure workflow executions
   ```
 - **Error Presentation**: If all configured fallback models are exhausted, the execution fails with a descriptive error listing all attempted models.
 - **State Integrity**: Since model swapping is handled locally inside the model wrapper, the LangGraph checkpointer and Postgres thread state are preserved intact without duplication.
+
+
+## Deployment & Cloud Infrastructure
+
+DocTask is deployed across cloud infrastructure:
+
+### Architecture Mapping
+- **Frontend Dashboard**: Deployed on [Vercel](https://doctask-nishanth.vercel.app) (`https://doctask-nishanth.vercel.app` & `https://frontend-alpha-flame-36.vercel.app`).
+- **Backend API & LangGraph Engine**: Containerized on **Google Cloud Run** (with fallback on Render Web Service), listening on dynamic `${PORT:-8080}` with automatic Alembic migrations on startup.
+- **Database & Checkpointer**: Managed **PostgreSQL with `pgvector`** (Render PostgreSQL, Oregon) storing relational entities and LangGraph checkpoints.
+- **Object Storage**: **Google Cloud Storage (GCS)** (`nishanth-billing-sandbox-storage`) managed via `GoogleCloudStorageAdapter` for persistent document and report storage.
+- **AI Models**: **Google Cloud Gemini API** (`gemini-2.5-pro` with automatic fallback to `gemini-2.5-flash` and `gemini-2.0-flash`).
+
+### Build & Deployment Workflow
+1. **Container Build (`Dockerfile`)**:
+   - Multi-stage build with lightweight CPU PyTorch wheels.
+   - Pre-downloads and caches HuggingFace embeddings (`sentence-transformers/all-MiniLM-L6-v2`) in `/app/.cache/huggingface` during the Docker image build, eliminating cold-start latency.
+2. **Deploy Backend to Google Cloud Run**:
+   ```bash
+   gcloud run deploy doctask-backend \
+     --source . \
+     --env-vars-file env.yaml \
+     --region us-central1 \
+     --allow-unauthenticated \
+     --memory 1Gi \
+     --cpu 1
+   ```
+3. **Deploy Frontend to Vercel**:
+   ```bash
+   cd frontend
+   npm run build
+   vercel --prod
+   ```

@@ -59,7 +59,53 @@ DocTask exposes two complementary control surfaces backed by a shared persistenc
 
 ---
 
-## 4. Performance & Operational Metrics
+## 4. Production Deployment Topology (Where & How Deployed)
+
+DocTask is engineered as a cloud-native, decoupled system deployed across managed cloud infrastructure for optimal resilience, autoscaling, and zero server maintenance:
+
+### 4.1. Deployment Infrastructure ("Where It Is Deployed")
+
+| Component | Cloud Platform / Service | Host / Resource | Configuration & Role |
+| :--- | :--- | :--- | :--- |
+| **Frontend UI** | **Vercel** | `https://doctask-nishanth.vercel.app`<br>`https://frontend-alpha-flame-36.vercel.app` | React 18 + Vite SPA, edge-distributed CDN. Auto-deployed on push with CORS regex matching `https://.*\.vercel\.app`. |
+| **Backend API & Workflow** | **Google Cloud Run** *(primary)*<br>**Render Web Service** *(backup)* | Containerized Service (`us-central1` / Oregon) | Fully managed serverless container running FastAPI, LangGraph orchestration, and FastMCP. Scales automatically with dynamic `$PORT` routing. |
+| **Relational & Vector DB** | **Render Managed PostgreSQL** | `oregon-postgres.render.com:5432/doctask_3bbu` | PostgreSQL with `pgvector` extension. Houses domain entities and LangGraph `PostgresSaver` checkpoint blobs. |
+| **File & Artifact Storage** | **Google Cloud Storage (GCS)** | Bucket: `nishanth-billing-sandbox-storage` | Object storage for uploaded contracts (PDF/DOCX), playbooks, and generated reports via `GoogleCloudStorageAdapter`. |
+| **LLM Provider** | **Google Cloud Vertex / Gemini** | `gemini-2.5-pro` (Primary)<br>`gemini-2.5-flash` / `gemini-2.0-flash` (Fallbacks) | Serverless AI inference with automatic fallback cascade on rate/quota limits. |
+
+### 4.2. Build & Packaging Pipeline ("How It Is Deployed")
+
+1. **Optimized Multi-Stage Dockerfile (`Dockerfile`)**:
+   - **Stage 1 (Builder)**: Compiles native C extensions (`gcc`, `libpq-dev`) and installs Python dependencies using the CPU-only PyTorch wheel index (`https://download.pytorch.org/whl/cpu`), keeping the final container image under 600 MB.
+   - **Stage 2 (Runtime)**: Copies compiled site-packages into a clean `python:3.12-slim` base image.
+   - **Build-Time Model Pre-Caching**: The embedding model (`sentence-transformers/all-MiniLM-L6-v2`) is downloaded directly during `docker build` into `/app/.cache/huggingface`. This guarantees zero network downloads or model cold-start delays at runtime.
+2. **Automated Schema Migrations & Startup**:
+   The container entrypoint executes:
+   ```bash
+   CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
+   ```
+   Ensures database schema migrations and `vector` extension checks apply cleanly before Uvicorn starts accepting requests.
+3. **Continuous Deployment Commands**:
+   - **Backend to Google Cloud Run**:
+     ```bash
+     gcloud run deploy doctask-backend \
+       --source . \
+       --env-vars-file env.yaml \
+       --region us-central1 \
+       --allow-unauthenticated \
+       --memory 1Gi \
+       --cpu 1
+     ```
+   - **Frontend to Vercel**:
+     ```bash
+     cd frontend && vercel --prod
+     ```
+4. **Health Checking & Cloud Run Readiness**:
+   Cloud Run and Render edge proxies monitor application health via dedicated lightweight endpoints `GET /health` and `GET /`, preventing proxy 502/504 errors.
+
+---
+
+## 5. Performance & Operational Metrics
 
 - **Ingestion Throughput**: Processes standard 20-page legal contracts (chunking, 384-dimensional vector embedding, database storage) in $<1.8$ seconds.
 - **Workflow Execution**: End-to-end execution across 3 documents with classification, entity extraction, cross-reconciliation, and rule examination averages $12-18$ seconds on `gemini-2.5-pro`.
@@ -68,7 +114,7 @@ DocTask exposes two complementary control surfaces backed by a shared persistenc
 
 ---
 
-## 5. Future Roadmap & Enhancements
+## 6. Future Roadmap & Enhancements
 
 1. **Streaming Real-time Progress (SSE / WebSockets)**: Transitioning from client polling to Server-Sent Events for instant node transition visual updates.
 2. **Table & Image OCR Extraction**: Integrating multimodal vision models for scanned image PDFs and complex embedded financial tables.
