@@ -25,9 +25,23 @@ export type FindingSeverity =
 export type ReviewDecision =
   | "approved"
   | "rejected"
-  | "pending";
+  | "pending"
+  | "needs_resolution";
 
-export interface  RunDocumentSummary {
+export type ApplicationStatus =
+  | "pending"
+  | "applied"
+  | "rejected"
+  | "failed"
+  | "not_applicable";
+
+export type ValidationStatus =
+  | "pending"
+  | "passed"
+  | "failed"
+  | "skipped";
+
+export interface RunDocumentSummary {
   id: string;
   filename: string;
   is_rules: boolean;
@@ -44,6 +58,9 @@ export interface RunResponse {
   error_message: string | null;
   documents?: RunDocumentSummary[];
   parent_id?: string | null;
+  pending_finding_count?: number;
+  approved_finding_count?: number;
+  rejected_finding_count?: number;
 }
 
 export interface FindingSourceCitation {
@@ -63,6 +80,8 @@ export interface FindingCitation {
 
 export interface FindingResponse {
   id: string;
+  run_id?: string;
+  document_id?: string | null;
   title: string;
   description: string;
   severity: FindingSeverity;
@@ -70,8 +89,38 @@ export interface FindingResponse {
   citation: FindingCitation | null;
   finding_metadata: Record<string, unknown> | null;
   created_at: string;
+
+  // Canonical proposed-edit fields
+  original_value: string | null;
+  proposed_value: string | null;
+  proposed_edit: string | null;
+  source_location: string | null;
+
+  // Lifecycle tracking
+  application_status: ApplicationStatus | null;
+  validation_status: ValidationStatus | null;
 }
 
+export interface ChangeRecord {
+  change_id: string;
+  finding_id: string;
+  run_id: string;
+  document_id: string | null;
+  source_location: string | null;
+  original_value: string;
+  new_value: string;
+  proposed_edit: string | null;
+  reviewer_decision: string;
+  application_status: string;
+  reason: string;
+  applied_at: string;
+}
+
+export interface SectionHashInfo {
+  before_hash: string;
+  after_hash: string;
+  changed: boolean;
+}
 
 export interface ReportResponse {
   id: string;
@@ -80,6 +129,14 @@ export interface ReportResponse {
   approved: boolean;
   created_at: string;
   updated_at: string;
+
+  // Final document artifact
+  final_content: string | null;
+  final_file_path: string | null;
+  validation_passed: boolean | null;
+  validation_summary: string | null;
+  change_history: ChangeRecord[] | null;
+  section_hashes: Record<string, SectionHashInfo> | null;
 }
 
 export interface WorkflowEventResponse {
@@ -130,4 +187,23 @@ export interface HumanDecisionRequest {
 export interface WorkflowRunResponse {
   thread_id: string;
   state: Record<string, unknown>;
+}
+
+export interface ExportResponse {
+  run_id: string;
+  run_name: string;
+  status: RunStatus;
+  stage: WorkflowStage;
+  has_final_document: boolean;
+  final_content: string | null;
+  total_findings: number;
+  approved_findings: number;
+  rejected_findings: number;
+  applied_changes: number;
+  failed_changes: number;
+  validation_passed: boolean | null;
+  validation_summary: string | null;
+  change_history: ChangeRecord[];
+  section_hashes: Record<string, SectionHashInfo>;
+  findings: FindingResponse[];
 }

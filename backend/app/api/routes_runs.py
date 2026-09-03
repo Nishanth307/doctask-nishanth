@@ -530,10 +530,125 @@ def trigger_run_update(
             detail="Run not found",
         )
 
-    # Re-use same service layer
     update_run = service.detect_and_process_updates(
         run=run,
         watch_folder=settings.DOCTASK_WATCH_FOLDER,
         db=db
     )
     return update_run
+
+
+
+from fastapi.responses import PlainTextResponse
+from app.schemas.run import ExportResponse
+
+
+@router.get(
+    "/{run_id}/export",
+    response_model=ExportResponse,
+    summary="Export complete final document lifecycle artifact",
+)
+def export_run(
+    run_id: UUID,
+    db: Session = Depends(get_db),
+    service: RunService = Depends(get_run_service),
+) -> ExportResponse:
+    """Return structured JSON export with final contract, applied changes, rejected
+    changes, validation result, provenance change history, and section hashes."""
+    from app.persistence.models.finding import Finding
+    from app.persistence.models.report import Report
+    from app.core.constants import ApplicationStatus, ReviewDecision
+
+    run = service.get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
+
+    findings = db.query(Finding).filter(Finding.run_id == run_id).all()
+    report = db.query(Report).filter(Report.run_id == run_id).first()
+
+    n_approved = sum(1 for f in findings if f.review_decision == ReviewDecision.APPROVED)
+    n_rejected = sum(1 for f in findings if f.review_decision == ReviewDecision.REJECTED)
+    n_applied = sum(1 for f in findings if f.application_status == ApplicationStatus.APPLIED)
+    n_failed = sum(1 for f in findings if f.application_status == ApplicationStatus.FAILED)
+
+    return ExportResponse(
+        run_id=run.id,
+        run_name=run.name,
+        status=run.status,
+        stage=run.stage,
+        has_final_document=bool(report and report.final_content),
+        final_content=report.final_content if report else None,
+        total_findings=len(findings),
+        approved_findings=n_approved,
+        rejected_findings=n_rejected,
+        applied_changes=n_applied,
+        failed_changes=n_failed,
+        validation_passed=report.validation_passed if report else None,
+        validation_summary=report.validation_summary if report else None,
+        change_history=report.change_history or [] if report else [],
+        section_hashes=report.section_hashes or {} if report else {},
+        findings=findings,
+    )
+
+
+@router.get(
+    "/{run_id}/export/download",
+    response_class=PlainTextResponse,
+    summary="Download the final contract document as plain text",
+)
+def download_final_document(
+    run_id: UUID,
+    db: Session = Depends(get_db),
+    service: RunService = Depends(get_run_service),
+) -> PlainTextResponse:
+    """Download the actual final contract file artifact (plain text)."""
+    from app.persistence.models.report import Report
+
+    run = service.get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
+
+    report = db.query(Report).filter(Report.run_id == run_id).first()
+    if not report or not report.final_content:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Final document not yet generated. Run must be completed first.",
+        )
+
+    filename = f"final_contract_{run_id}.txt"
+    return PlainTextResponse(
+        content=report.final_content,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get(
+    "/{run_id}/final-document",
+    summary="Get final contract text with section hash comparison",
+)
+def get_final_document(
+    run_id: UUID,
+    db: Session = Depends(get_db),
+    service: RunService = Depends(get_run_service),
+) -> dict:
+    """Return final contract text and section-level before/after hash comparison
+    proving that unchanged sections remained byte-identical."""
+    from app.persistence.models.report import Report
+
+    run = service.get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
+
+    report = db.query(Report).filter(Report.run_id == run_id).first()
+    if not report:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No report found for this run.")
+
+    return {
+        "run_id": str(run_id),
+        "has_final_document": bool(report.final_content),
+        "final_content": report.final_content,
+        "validation_passed": report.validation_passed,
+        "validation_summary": report.validation_summary,
+        "section_hashes": report.section_hashes or {},
+        "change_history": report.change_history or [],
+    }

@@ -7,9 +7,10 @@ import {
   XCircle,
   FileText,
   FileSearch,
-  ArrowRight,
   ShieldAlert,
   HelpCircle,
+  GitCompare,
+  MapPin,
 } from "lucide-react";
 import { submitFindingDecision, submitHumanDecision } from "../../api/runs";
 import type { FindingResponse, FindingSeverity } from "../../api/types";
@@ -109,9 +110,38 @@ export function ReviewQueue({ runId, findings, onRefresh }: ReviewQueueProps) {
         </span>
       );
     }
+    if (decision === "needs_resolution") {
+      return (
+        <span className="finding-decision-pill pill-warning">
+          <AlertTriangle size={12} /> Needs Resolution
+        </span>
+      );
+    }
     return (
       <span className="finding-decision-pill pill-pending">
         Pending
+      </span>
+    );
+  };
+
+  const renderApplicationStatus = (status: string | null) => {
+    if (!status || status === "pending") return null;
+    const colorMap: Record<string, string> = {
+      applied: "text-emerald-600 bg-emerald-50",
+      rejected: "text-slate-500 bg-slate-100",
+      failed: "text-red-600 bg-red-50",
+      not_applicable: "text-amber-700 bg-amber-50",
+    };
+    const labelMap: Record<string, string> = {
+      applied: "Edit Applied",
+      rejected: "Edit Not Applied",
+      failed: "Application Failed",
+      not_applicable: "Not Applicable (No Edit)",
+    };
+    const cls = colorMap[status] || "text-slate-500 bg-slate-100";
+    return (
+      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${cls}`}>
+        {labelMap[status] || status}
       </span>
     );
   };
@@ -186,6 +216,7 @@ export function ReviewQueue({ runId, findings, onRefresh }: ReviewQueueProps) {
             <div className="review-findings-scroll-list">
               {findings.map((finding, idx) => {
                 const isSelected = activeFinding?.id === finding.id;
+                const hasProposedEdit = finding.original_value && finding.proposed_value;
                 return (
                   <button
                     key={finding.id}
@@ -198,9 +229,22 @@ export function ReviewQueue({ runId, findings, onRefresh }: ReviewQueueProps) {
                       <span className="compact-finding-title">{finding.title}</span>
                     </div>
 
+                    {/* Show proposed edit summary if available */}
+                    {hasProposedEdit && (
+                      <div className="compact-finding-change-summary">
+                        <GitCompare size={10} className="text-blue-500" />
+                        <span className="compact-change-text">
+                          {finding.proposed_edit || `${finding.original_value} → ${finding.proposed_value}`}
+                        </span>
+                      </div>
+                    )}
+
                     <div className="compact-finding-meta">
                       {renderSeverityBadge(finding.severity)}
                       {renderDecisionBadge(finding.review_decision)}
+                      {finding.application_status && finding.application_status !== "pending" &&
+                        renderApplicationStatus(finding.application_status)
+                      }
                     </div>
                   </button>
                 );
@@ -220,6 +264,9 @@ export function ReviewQueue({ runId, findings, onRefresh }: ReviewQueueProps) {
                       <div className="inspector-badges">
                         {renderSeverityBadge(activeFinding.severity)}
                         {renderDecisionBadge(activeFinding.review_decision)}
+                        {activeFinding.application_status && activeFinding.application_status !== "pending" &&
+                          renderApplicationStatus(activeFinding.application_status)
+                        }
                       </div>
                     </div>
 
@@ -268,6 +315,14 @@ export function ReviewQueue({ runId, findings, onRefresh }: ReviewQueueProps) {
                       </span>
                     </div>
                   )}
+
+                  {/* Source location */}
+                  {activeFinding.source_location && (
+                    <div className="inspector-metadata-tag">
+                      <MapPin size={14} />
+                      <span>Location: {activeFinding.source_location}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Inspector Content Body */}
@@ -280,12 +335,54 @@ export function ReviewQueue({ runId, findings, onRefresh }: ReviewQueueProps) {
                     </div>
                   </div>
 
+                  {/* ★ CANONICAL PROPOSED CHANGE — Original → Proposed diff */}
+                  {activeFinding.original_value && activeFinding.proposed_value && (
+                    <div className="inspector-section">
+                      <h4 className="section-label">Proposed Edit</h4>
+                      <div className="proposed-change-diff-box">
+                        <div className="diff-row diff-row-original">
+                          <span className="diff-label diff-label-original">Before</span>
+                          <span className="diff-value diff-value-original">
+                            {activeFinding.original_value}
+                          </span>
+                        </div>
+                        <div className="diff-arrow-row">
+                          <span className="diff-arrow-line" />
+                          <span className="diff-arrow-label">will change to</span>
+                          <span className="diff-arrow-line" />
+                        </div>
+                        <div className="diff-row diff-row-proposed">
+                          <span className="diff-label diff-label-proposed">After</span>
+                          <span className="diff-value diff-value-proposed">
+                            {activeFinding.proposed_value}
+                          </span>
+                        </div>
+                        {activeFinding.review_decision === "approved" && (
+                          <div className="diff-approved-notice">
+                            <Check size={13} className="text-emerald-600" />
+                            <span>
+                              Approved — this edit will be applied when you commit.
+                            </span>
+                          </div>
+                        )}
+                        {activeFinding.review_decision === "rejected" && (
+                          <div className="diff-rejected-notice">
+                            <X size={13} className="text-slate-500" />
+                            <span>
+                              Rejected — the original value will remain unchanged.
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Citation / Sources comparison */}
                   {activeFinding.citation?.sources &&
                     Array.isArray(activeFinding.citation.sources) &&
                     activeFinding.citation.sources.length > 0 && (
                       <div className="inspector-section">
-                        <h4 className="section-label">Source Citations & Conflicting Data</h4>
+                        <h4 className="section-label">Source Citations &amp; Conflicting Data</h4>
                         <div className="citation-cards-grid">
                           {activeFinding.citation.sources.map((src, sIdx) => (
                             <div key={sIdx} className="citation-card">
@@ -311,17 +408,6 @@ export function ReviewQueue({ runId, findings, onRefresh }: ReviewQueueProps) {
                         </div>
                       </div>
                     )}
-
-                  {/* Proposed Change / Remediation */}
-                  {activeFinding.finding_metadata?.recommendation ? (
-                    <div className="inspector-section">
-                      <h4 className="section-label">Proposed change</h4>
-                      <div className="proposed-change-box">
-                        <ArrowRight size={16} className="text-blue-600" />
-                        <p>{String(activeFinding.finding_metadata.recommendation)}</p>
-                      </div>
-                    </div>
-                  ) : null}
                 </div>
               </div>
             ) : (
@@ -363,7 +449,7 @@ export function ReviewQueue({ runId, findings, onRefresh }: ReviewQueueProps) {
             className="btn-finalize btn-finalize-approve"
           >
             <CheckCircle2 size={16} />
-            {isFinalizing ? "Submitting..." : "Approve and Commit Deliverable"}
+            {isFinalizing ? "Submitting..." : "Approve and Apply Edits"}
           </button>
         </div>
       </div>

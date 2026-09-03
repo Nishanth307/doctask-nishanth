@@ -47,6 +47,24 @@ class ReviewDecision(str, Enum):
     APPROVED = "approved"
     REJECTED = "rejected"
     PENDING = "pending"
+    NEEDS_RESOLUTION = "needs_resolution"  # contradiction with no authoritative policy rule
+
+
+class ApplicationStatus(str, Enum):
+    """Tracks whether an approved finding's proposed edit was applied to the document."""
+    PENDING = "pending"
+    APPLIED = "applied"
+    REJECTED = "rejected"  # reviewer rejected this finding
+    FAILED = "failed"  # application attempt failed
+    NOT_APPLICABLE = "not_applicable"  # approved but no concrete original/proposed text to substitute
+
+
+class ValidationStatus(str, Enum):
+    """Tracks post-edit validation result for a finding."""
+    PENDING = "pending"
+    PASSED = "passed"
+    FAILED = "failed"
+    SKIPPED = "skipped"  # skipped because finding was rejected
 
 
 class FindingSeverity(str, Enum):

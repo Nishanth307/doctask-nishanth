@@ -108,7 +108,7 @@ Do not invent checklist rules. If the user-supplied rules are fully satisfied, r
 Return:
 - is_valid: whether the document/facts conform to the user-supplied review rules (False if any rule is violated or missing)
 - confidence: confidence between 0 and 1
-- issues: a list of specific issues found (each issue describing the violation/missing requirement and rule reference)
+- issues: a list of specific issues found (each describing the violation, rule reference, and the specific section affected)
 - summary: a concise examination summary
 """
             else:

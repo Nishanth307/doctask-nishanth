@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     DEFAULT_PROVIDER: LLMProvider = LLMProvider.GEMINI
     GOOGLE_API_KEY: str | None = None
     GEMINI_MODEL: GeminiModel = GeminiModel.GEMINI_2_5_FLASH
-    LLM_PRIMARY_MODEL: str = "gemini-2.5-pro"
+    LLM_PRIMARY_MODEL: str = "gemini-2.5-flash-lite"
 
     DATABASE_URL: str = "postgresql+psycopg://user:1234@localhost:5432/doctask"
     UPLOAD_DIRECTORY: str = "storage/uploads"
@@ -44,7 +44,7 @@ class Settings(BaseSettings):
 
     LOG_LEVEL: str = "INFO"
     DOCTASK_WATCH_FOLDER: str = "storage/watch"
-    LLM_FALLBACK_MODELS: str = "gemini-2.5-pro,gemini-2.5-flash,gemini-2.0-flash"
+    LLM_FALLBACK_MODELS: str = "gemini-2.5-flash-lite,gemini-3.5-flash,gemini-2.5-flash"
 
     @property
     def absolute_upload_dir(self) -> Path:

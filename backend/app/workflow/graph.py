@@ -1,3 +1,19 @@
+"""LangGraph workflow definition for DocTask.
+
+Lifecycle (happy path):
+  START → classify → extract → reconcile → [human_review] → examine
+        → findings_review (interrupt) → apply_edits → validate_edits → commit → update → END
+
+Branching decisions:
+  - classify failure → retry or failed
+  - extract failure → retry or failed
+  - reconcile failure → retry or failed
+  - contradictions or pending review → findings_review (interrupt gate)
+  - No pending findings → apply_edits directly after examine
+  - apply_edits failure → failed
+  - validate_edits failure → commit (validation failure is recorded but doesn't abort)
+  - commit → update → END
+"""
 from langgraph.graph import END, START, StateGraph
 
 from app.llm.enums import ModelName
@@ -10,7 +26,9 @@ from app.workflow.nodes.extract import ExtractNode
 from app.workflow.nodes.human_review import human_review_node
 from app.workflow.nodes.reconcile import ReconcileNode
 from app.workflow.nodes.revise import ReviseNode
-from app.workflow.nodes.update import UpdateNode
+from app.workflow.nodes.update import CommitNode, UpdateNode, findings_review_node
+from app.workflow.nodes.apply_edits import ApplyEditsNode
+from app.workflow.nodes.validate_edits import ValidateEditsNode
 from app.workflow.retry import execute_with_retry
 from app.workflow.state import WorkflowState
 
@@ -58,50 +76,42 @@ def route_after_examine(state: WorkflowState) -> str:
             return "examine"
         return "failed"
 
+    return "generate_suggested_changes"
+
+
+def route_after_generate_suggested_changes(state: WorkflowState) -> str:
+    if state.get("error"):
+        if should_retry(state):
+            return "generate_suggested_changes"
+        return "failed"
+
     run_id = state.get("run_id")
     if not run_id:
-        return "commit"
+        return "apply_edits"
 
     from app.core.database import SessionLocal
     from app.persistence.models.finding import Finding
-    from app.persistence.repositories.finding import FindingRepository
-    from app.services.finding_service import FindingService
     from app.core.constants import ReviewDecision
 
     db = SessionLocal()
     try:
-        finding_repo = FindingRepository(db)
-        finding_service = FindingService(finding_repo)
-
-        contradictions = state.get("contradictions", [])
-        finding_service.sync_contradiction_findings(run_id, contradictions)
-
-        examination = state.get("examination")
-        issues = examination.issues if examination else []
-        finding_service.sync_checklist_findings(run_id, issues)
-        db.commit()
-
         findings = db.query(Finding).filter(Finding.run_id == run_id).all()
         if not findings:
-            return "commit"
+            return "apply_edits"
 
         pending = [f for f in findings if f.review_decision == ReviewDecision.PENDING]
         if pending:
             return "findings_review"
-    except Exception:
-        db.rollback()
-        raise
     finally:
         db.close()
 
-    return "commit"
-
+    return "apply_edits"
 
 
 def route_after_findings_review(state: WorkflowState) -> str:
     run_id = state.get("run_id")
     if not run_id:
-        return "commit"
+        return "apply_edits"
 
     from app.core.database import SessionLocal
     from app.persistence.models.finding import Finding
@@ -118,7 +128,7 @@ def route_after_findings_review(state: WorkflowState) -> str:
     finally:
         db.close()
 
-    return "commit"
+    return "apply_edits"
 
 
 def route_after_reconcile(state: WorkflowState) -> str:
@@ -153,9 +163,6 @@ def route_after_reconcile(state: WorkflowState) -> str:
     return "examine"
 
 
-
-
-
 def route_after_human_review(state: WorkflowState) -> str:
     decision = state.get("human_decision")
 
@@ -166,6 +173,12 @@ def route_after_human_review(state: WorkflowState) -> str:
         return "revise"
 
     return "human_review"
+
+
+def route_after_apply_edits(state: WorkflowState) -> str:
+    if state.get("error"):
+        return "failed"
+    return "validate_edits"
 
 
 def build_workflow(
@@ -194,12 +207,21 @@ def build_workflow(
         model_name=ModelName.GEMINI_2_5_FLASH,
     )
 
+    from app.workflow.nodes.generate_suggested_changes import GenerateSuggestedChangesNode
+    generate_suggested_changes_node = GenerateSuggestedChangesNode(
+        model_factory=model_factory,
+        model_name=ModelName.GEMINI_2_5_FLASH,
+    )
+
     revise = ReviseNode(
         model_factory=model_factory,
         model_name=ModelName.GEMINI_2_5_FLASH,
     )
 
-    update = UpdateNode()
+    apply_edits_node = ApplyEditsNode()
+    validate_edits_node = ValidateEditsNode()
+    commit_node = CommitNode()
+    update_node = UpdateNode()
 
     def classify_with_retry(state: WorkflowState) -> WorkflowState:
         return execute_with_retry(
@@ -215,13 +237,12 @@ def build_workflow(
     graph.add_node("human_review", human_review_node)
     graph.add_node("revise", revise)
     graph.add_node("examine", examine)
-
-    from app.workflow.nodes.update import CommitNode, findings_review_node
-    commit_node = CommitNode()
+    graph.add_node("generate_suggested_changes", generate_suggested_changes_node)
     graph.add_node("findings_review", findings_review_node)
+    graph.add_node("apply_edits", apply_edits_node)
+    graph.add_node("validate_edits", validate_edits_node)
     graph.add_node("commit", commit_node)
-
-    graph.add_node("update", update)
+    graph.add_node("update", update_node)
     graph.add_node("failed", failed_node)
 
     graph.add_edge(START, "classify")
@@ -257,8 +278,6 @@ def build_workflow(
         },
     )
 
-
-
     graph.add_conditional_edges(
         "human_review",
         route_after_human_review,
@@ -276,8 +295,18 @@ def build_workflow(
         route_after_examine,
         {
             "examine": "examine",
+            "generate_suggested_changes": "generate_suggested_changes",
+            "failed": "failed",
+        },
+    )
+
+    graph.add_conditional_edges(
+        "generate_suggested_changes",
+        route_after_generate_suggested_changes,
+        {
+            "generate_suggested_changes": "generate_suggested_changes",
             "findings_review": "findings_review",
-            "commit": "commit",
+            "apply_edits": "apply_edits",
             "failed": "failed",
         },
     )
@@ -287,10 +316,21 @@ def build_workflow(
         route_after_findings_review,
         {
             "findings_review": "findings_review",
-            "commit": "commit",
+            "apply_edits": "apply_edits",
         },
     )
 
+    graph.add_conditional_edges(
+        "apply_edits",
+        route_after_apply_edits,
+        {
+            "validate_edits": "validate_edits",
+            "failed": "failed",
+        },
+    )
+
+    # validate_edits always goes to commit (validation failure is recorded not aborted)
+    graph.add_edge("validate_edits", "commit")
     graph.add_edge("commit", "update")
     graph.add_edge("update", END)
 

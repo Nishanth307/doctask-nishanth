@@ -227,3 +227,222 @@ def process_update(run_id: str) -> dict:
         }
     finally:
         db.close()
+
+
+@mcp.tool()
+def get_proposed_changes(run_id: str) -> list[dict]:
+    """Get all findings with original_value, proposed_value, and proposed_edit for a run.
+    
+    Returns the canonical proposed-change representation for each finding so a machine
+    can decide which changes to approve or reject.
+    """
+    db, run_service, _ = get_services()
+    try:
+        from app.persistence.models.finding import Finding
+        findings = db.query(Finding).filter(Finding.run_id == UUID(run_id)).all()
+        return [{
+            "id": str(f.id),
+            "title": f.title,
+            "description": f.description,
+            "severity": f.severity.value,
+            "review_decision": f.review_decision.value,
+            "original_value": f.original_value,
+            "proposed_value": f.proposed_value,
+            "proposed_edit": f.proposed_edit or (
+                f"{f.original_value} → {f.proposed_value}"
+                if f.original_value and f.proposed_value else None
+            ),
+            "source_location": f.source_location,
+            "application_status": f.application_status.value,
+            "validation_status": f.validation_status.value,
+        } for f in findings]
+    finally:
+        db.close()
+
+
+@mcp.tool()
+def apply_and_finalize(run_id: str) -> dict:
+    """Apply all approved changes, run post-edit validation, and generate the final document.
+    
+    This triggers the apply_edits → validate_edits → commit nodes directly (bypassing
+    the interrupt gate when all findings are already decided). Use after all findings
+    have been approved or rejected via decide_finding().
+    
+    Returns the final document content and validation result.
+    """
+    db, run_service, _ = get_services()
+    try:
+        from app.persistence.models.finding import Finding
+        from app.persistence.models.report import Report
+        from app.persistence.models.run import Run
+        from app.core.constants import ReviewDecision
+        from app.services.mutation_service import DocumentMutationEngine
+        from app.services.validation_service import PostEditValidationEngine
+
+        run = run_service.get_run(UUID(run_id))
+        if not run:
+            return {"error": "Run not found"}
+
+        findings = db.query(Finding).filter(Finding.run_id == UUID(run_id)).all()
+        pending = [f for f in findings if f.review_decision == ReviewDecision.PENDING]
+        if pending:
+            return {
+                "error": f"{len(pending)} findings still pending review. Decide all findings first.",
+                "pending_finding_ids": [str(f.id) for f in pending],
+            }
+
+        # Get source text from the run's result/state if available
+        from app.persistence.repositories.workflow_result import WorkflowResultRepository
+        result_repo = WorkflowResultRepository(db)
+        result = result_repo.get_by_run_id(UUID(run_id))
+        
+        source_text = ""
+        if result and result.extracted_facts:
+            # Try to reconstruct from any stored document text
+            pass
+        
+        # Fall back to checking the report for existing content
+        report = db.query(Report).filter(Report.run_id == UUID(run_id)).first()
+        if report and report.content and not source_text:
+            # We need the original document text - use documents on the run
+            for doc in run.documents:
+                if not doc.is_rules and doc.extracted_text:
+                    source_text += doc.extracted_text + "\n\n"
+            source_text = source_text.strip()
+
+        # Apply approved edits
+        engine = DocumentMutationEngine()
+        mutation_result = engine.apply_approved_edits(
+            source_text=source_text,
+            findings=findings,
+            run_id=run_id,
+        )
+
+        # Update application_status in DB
+        from app.core.constants import ApplicationStatus
+        applied_ids = {cr.finding_id for cr in mutation_result.applied_changes}
+        rejected_ids = {cr.finding_id for cr in mutation_result.rejected_changes}
+        failed_ids = {cr.finding_id for cr in mutation_result.failed_changes}
+        for f in findings:
+            fid = str(f.id)
+            if fid in applied_ids:
+                f.application_status = ApplicationStatus.APPLIED
+            elif fid in rejected_ids:
+                f.application_status = ApplicationStatus.REJECTED
+            elif fid in failed_ids:
+                f.application_status = ApplicationStatus.FAILED
+
+        # Post-edit validation
+        val_engine = PostEditValidationEngine()
+        validation = val_engine.validate(findings=findings, mutation_result=mutation_result)
+
+        # Update validation_status in DB
+        from app.core.constants import ValidationStatus
+        for vr in validation.finding_results:
+            for f in findings:
+                if str(f.id) == vr.finding_id:
+                    try:
+                        f.validation_status = ValidationStatus(vr.validation_status)
+                    except ValueError:
+                        pass
+
+        # Persist final document to report
+        change_history = mutation_result.to_change_history()
+        section_hashes = mutation_result.hash_comparison
+        n_applied = len(mutation_result.applied_changes)
+        n_rejected = len(mutation_result.rejected_changes)
+
+        final_doc = (
+            f"# FINAL CONTRACT DOCUMENT\n"
+            f"# {n_applied} edit(s) applied, {n_rejected} rejected\n"
+            f"# Post-Edit Validation: {'PASSED' if validation.passed else 'FAILED'}\n"
+            f"{'#' * 60}\n\n"
+            f"{mutation_result.mutated_text}"
+        ) if mutation_result.mutated_text else ""
+
+        if report:
+            report.final_content = final_doc
+            report.validation_passed = validation.passed
+            report.validation_summary = validation.summary
+            report.change_history = change_history
+            report.section_hashes = section_hashes
+        else:
+            report = Report(
+                run_id=UUID(run_id),
+                content="",
+                version=1,
+                approved=True,
+                final_content=final_doc,
+                validation_passed=validation.passed,
+                validation_summary=validation.summary,
+                change_history=change_history,
+                section_hashes=section_hashes,
+            )
+            db.add(report)
+
+        db.commit()
+
+        return {
+            "applied_changes": n_applied,
+            "rejected_changes": n_rejected,
+            "failed_changes": len(mutation_result.failed_changes),
+            "validation_passed": validation.passed,
+            "validation_summary": validation.summary,
+            "has_final_document": bool(final_doc),
+            "final_content_preview": final_doc[:500] + "..." if len(final_doc) > 500 else final_doc,
+        }
+    except Exception as exc:
+        db.rollback()
+        return {"error": str(exc)}
+    finally:
+        db.close()
+
+
+@mcp.tool()
+def export_final_document(run_id: str) -> dict:
+    """Export the complete final document artifact with full provenance.
+    
+    Returns:
+        - final_content: The actual edited contract text
+        - change_history: Complete audit trail (who approved what, when, why)
+        - section_hashes: SHA-256 proof that unchanged sections remained identical
+        - validation_result: Post-edit validation outcome per finding
+    """
+    db, run_service, _ = get_services()
+    try:
+        from app.persistence.models.finding import Finding
+        from app.persistence.models.report import Report
+        from app.core.constants import ApplicationStatus, ReviewDecision
+
+        run = run_service.get_run(UUID(run_id))
+        if not run:
+            return {"error": "Run not found"}
+
+        report = db.query(Report).filter(Report.run_id == UUID(run_id)).first()
+        if not report or not report.final_content:
+            return {
+                "error": "Final document not yet generated. Call apply_and_finalize() first.",
+                "run_status": run.status.value,
+            }
+
+        findings = db.query(Finding).filter(Finding.run_id == UUID(run_id)).all()
+        n_approved = sum(1 for f in findings if f.review_decision == ReviewDecision.APPROVED)
+        n_rejected = sum(1 for f in findings if f.review_decision == ReviewDecision.REJECTED)
+        n_applied = sum(1 for f in findings if f.application_status == ApplicationStatus.APPLIED)
+
+        return {
+            "run_id": run_id,
+            "run_name": run.name,
+            "status": run.status.value,
+            "total_findings": len(findings),
+            "approved_findings": n_approved,
+            "rejected_findings": n_rejected,
+            "applied_changes": n_applied,
+            "validation_passed": report.validation_passed,
+            "validation_summary": report.validation_summary,
+            "final_content": report.final_content,
+            "change_history": report.change_history or [],
+            "section_hashes": report.section_hashes or {},
+        }
+    finally:
+        db.close()

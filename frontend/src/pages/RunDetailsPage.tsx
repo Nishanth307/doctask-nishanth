@@ -245,6 +245,43 @@ export function RunDetailsPage() {
         </div>
       )}
 
+      {run.status === "failed" && run.error_message && (
+        <div role="alert" className="error-alert-card mb-6 border border-rose-300 bg-rose-50/90 p-4 rounded-xl shadow-sm">
+          <div className="flex items-start gap-3.5">
+            <AlertCircle className="text-rose-600 shrink-0 mt-0.5" size={22} />
+            <div className="flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-semibold text-rose-950 text-base">
+                  {run.error_message.toLowerCase().includes("quota") ||
+                  run.error_message.toLowerCase().includes("429") ||
+                  run.error_message.toLowerCase().includes("exhausted") ||
+                  run.error_message.toLowerCase().includes("rate limit")
+                    ? "LLM Rate Limit / Quota Exceeded"
+                    : "Workflow Execution Failed"}
+                </h3>
+                {(run.error_message.toLowerCase().includes("quota") ||
+                  run.error_message.toLowerCase().includes("429") ||
+                  run.error_message.toLowerCase().includes("exhausted")) && (
+                  <span className="px-2 py-0.5 text-xs font-semibold bg-rose-200 text-rose-800 rounded-md">
+                    API Quota Error
+                  </span>
+                )}
+              </div>
+              <p className="text-sm text-rose-800 mt-1.5 leading-relaxed font-mono text-xs bg-white/70 p-2.5 rounded-lg border border-rose-200/60 overflow-x-auto whitespace-pre-wrap">
+                {run.error_message}
+              </p>
+              {(run.error_message.toLowerCase().includes("quota") ||
+                run.error_message.toLowerCase().includes("429") ||
+                run.error_message.toLowerCase().includes("exhausted")) && (
+                <p className="text-xs text-rose-700 mt-2">
+                  💡 <strong>Tip:</strong> Free-tier Gemini accounts have per-minute request limits. Wait 30–60 seconds, or provide an upgraded API key in <code className="bg-rose-100 px-1 py-0.5 rounded">.env</code>.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Visual Stepper Timeline */}
       <WorkflowStepper
         events={details.workflow_events}

@@ -28,19 +28,23 @@ export function RunTimeline({ events, currentStage, runStatus }: RunTimelineProp
     const hasFailed = stageEvents.some((e) => e.status === "failed");
     const hasStarted = stageEvents.some((e) => e.status === "started" || e.status === "running");
 
+    if (runStatus === "completed") return "completed";
     if (hasFailed) return "failed";
     if (hasCompleted) return "completed";
     if (runStatus === "failed" && currentStage === stage) return "failed";
     if (runStatus === "waiting_for_review" && stage === "review") return "waiting";
-    if (currentStage === stage && runStatus === "running") return "running";
-    if (hasStarted) return "running";
 
     const currentIndex = STAGES_ORDER.findIndex((s) => s.stage === currentStage);
     const stageIndex = STAGES_ORDER.findIndex((s) => s.stage === stage);
 
-    if (stageIndex < currentIndex) {
+    // If workflow has moved past this stage, it is completed
+    if (currentIndex !== -1 && stageIndex !== -1 && stageIndex < currentIndex) {
       return "completed";
     }
+
+    if (currentStage === stage && runStatus === "running") return "running";
+    if (hasStarted && (currentStage === stage || runStatus === "running")) return "running";
+    if (hasStarted && stageIndex <= currentIndex) return "completed";
 
     return "pending";
   };

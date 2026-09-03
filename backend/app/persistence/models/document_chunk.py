@@ -59,3 +59,4 @@ class DocumentChunkModel(Base):
         if "metadata" in kwargs and "chunk_metadata" not in kwargs:
             kwargs["chunk_metadata"] = kwargs.pop("metadata")
         super().__init__(**kwargs)
+

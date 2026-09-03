@@ -49,6 +49,7 @@ def create_underlying_model(model_name: ModelName) -> Any:
         ModelName.GEMINI_2_5_PRO,
         ModelName.GEMINI_2_5_FLASH_LITE,
         ModelName.GEMINI_2_0_FLASH,
+        ModelName.GEMINI_3_FLASH,
     ):
         raise ValueError(f"Unsupported model: {model_name}")
 
@@ -77,12 +78,12 @@ def is_retryable_llm_error(exc: Exception) -> bool:
     class_name = exc.__class__.__name__
     if class_name in ("ResourceExhausted", "ServiceUnavailable"):
         return True
-    if "429" in err_str or "503" in err_str:
+    if "429" in err_str or "503" in err_str or "404" in err_str:
         return True
-    if "quota" in err_str or "rate limit" in err_str or "resource exhausted" in err_str or "temporarily unavailable" in err_str:
+    if "quota" in err_str or "rate limit" in err_str or "resource exhausted" in err_str or "temporarily unavailable" in err_str or "no longer available" in err_str or "not found" in err_str:
         return True
     status_code = getattr(exc, "status_code", None)
-    if status_code in (429, 503):
+    if status_code in (429, 503, 404):
         return True
     return False
 

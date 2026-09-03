@@ -48,6 +48,13 @@ export const FindingsList: React.FC<FindingsListProps> = ({ findings }) => {
         </span>
       );
     }
+    if (decision === "needs_resolution") {
+      return (
+        <span className="finding-decision-pill pill-warning">
+          <Clock size={12} /> Needs Resolution
+        </span>
+      );
+    }
     return (
       <span className="finding-decision-pill pill-pending">
         <Clock size={12} /> Pending Review

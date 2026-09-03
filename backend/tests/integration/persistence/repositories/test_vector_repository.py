@@ -98,7 +98,7 @@ class TestVectorRepositoryIntegration:
             "Machine learning document"
         )
 
-        assert results[0].chunk.metadata == {
+        assert results[0].chunk.chunk_metadata == {
             "page": 1,
         }
 

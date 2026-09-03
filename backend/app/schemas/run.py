@@ -5,9 +5,11 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.constants import (
+    ApplicationStatus,
     FindingSeverity,
     ReviewDecision,
     RunStatus,
+    ValidationStatus,
     WorkflowStage,
 )
 
@@ -64,19 +66,46 @@ class WorkflowEventResponse(BaseModel):
 
 
 class FindingResponse(BaseModel):
+    """Canonical finding response.
+
+    Includes both the detected issue AND the proposed change, so callers
+    can display the full "Original → Proposed" diff and track lifecycle status.
+    """
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    run_id: UUID
+    document_id: UUID | None = None
     title: str
     description: str
     severity: FindingSeverity
     review_decision: ReviewDecision
-    citation: dict[str, Any] | None
-    finding_metadata: dict[str, Any] | None
+    citation: dict[str, Any] | None = None
+    finding_metadata: dict[str, Any] | None = None
+
+    # --- Canonical proposed-edit fields ---
+    original_value: str | None = None
+    proposed_value: str | None = None
+    proposed_edit: str | None = None
+    source_location: str | None = None
+
+    # --- Lifecycle tracking ---
+    application_status: ApplicationStatus | None = None
+    validation_status: ValidationStatus | None = None
+
     created_at: datetime
+
+    @property
+    def change_summary(self) -> str | None:
+        if self.proposed_edit:
+            return self.proposed_edit
+        if self.original_value and self.proposed_value:
+            return f"{self.original_value} → {self.proposed_value}"
+        return None
 
 
 class ReportResponse(BaseModel):
+    """Report response with both audit content and final document artifact."""
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -85,6 +114,14 @@ class ReportResponse(BaseModel):
     approved: bool
     created_at: datetime
     updated_at: datetime
+
+    # --- Final Document Artifact ---
+    final_content: str | None = None
+    final_file_path: str | None = None
+    validation_passed: bool | None = None
+    validation_summary: str | None = None
+    change_history: list[dict[str, Any]] | None = None
+    section_hashes: dict[str, Any] | None = None
 
 
 class WorkflowResultResponse(BaseModel):
@@ -115,3 +152,31 @@ class ReviewResponse(BaseModel):
     stage: WorkflowStage
     requires_review: bool
     findings: list[FindingResponse]
+
+
+class ExportResponse(BaseModel):
+    """Structured export of the complete final document lifecycle artifact."""
+    run_id: UUID
+    run_name: str
+    status: RunStatus
+    stage: WorkflowStage
+
+    # Final document
+    has_final_document: bool
+    final_content: str | None = None
+
+    # Summary counts
+    total_findings: int
+    approved_findings: int
+    rejected_findings: int
+    applied_changes: int
+    failed_changes: int
+
+    # Validation
+    validation_passed: bool | None = None
+    validation_summary: str | None = None
+
+    # Full provenance
+    change_history: list[dict[str, Any]] = []
+    section_hashes: dict[str, Any] = {}
+    findings: list[FindingResponse] = []

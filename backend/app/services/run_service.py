@@ -292,56 +292,63 @@ class RunService:
                 "failed",
                 run.error_message,
             )
-
-        elif state.get("human_review_required"):
-            self.wait_for_review(run)
-
-            self._record_event(
-                run,
-                WorkflowStage.REVIEW,
-                "waiting",
-                "Workflow is waiting for human review",
-            )
-
-        elif state.get("status") == "completed":
-            self.complete_run(run)
-
-            self._record_event(
-                run,
-                WorkflowStage.COMMIT,
-                "completed",
-                "Workflow completed successfully",
-            )
-
-            if self.workflow_result_service is None:
-                raise RuntimeError(
-                    "WorkflowResultService is not configured"
-                )
-            self.workflow_result_service.create_result(
-                run_id=run.id,
-                state=state,
-            )
-
         else:
-            from app.core.database import SessionLocal
-            from app.persistence.models.finding import Finding
-            from app.core.constants import ReviewDecision
-            db = SessionLocal()
-            try:
-                pending_count = db.query(Finding).filter(
-                    Finding.run_id == run.id,
-                    Finding.review_decision == ReviewDecision.PENDING
-                ).count()
-                if pending_count > 0:
-                    self.wait_for_review(run)
-                    self._record_event(
-                        run,
-                        WorkflowStage.REVIEW,
-                        "waiting",
-                        f"Workflow is waiting for human review of {pending_count} findings",
+            self._record_event(
+                run,
+                WorkflowStage.INGESTION,
+                "completed",
+                "Documents ingested and dispatched",
+            )
+
+            if state.get("human_review_required"):
+                self.wait_for_review(run)
+
+                self._record_event(
+                    run,
+                    WorkflowStage.REVIEW,
+                    "waiting",
+                    "Workflow is waiting for human review",
+                )
+
+            elif state.get("status") == "completed":
+                self.complete_run(run)
+
+                self._record_event(
+                    run,
+                    WorkflowStage.COMMIT,
+                    "completed",
+                    "Workflow completed successfully",
+                )
+
+                if self.workflow_result_service is None:
+                    raise RuntimeError(
+                        "WorkflowResultService is not configured"
                     )
-            finally:
-                db.close()
+                self.workflow_result_service.create_result(
+                    run_id=run.id,
+                    state=state,
+                )
+
+            else:
+                from app.core.database import SessionLocal
+                from app.persistence.models.finding import Finding
+                from app.core.constants import ReviewDecision
+                db = SessionLocal()
+                try:
+                    pending_count = db.query(Finding).filter(
+                        Finding.run_id == run.id,
+                        Finding.review_decision == ReviewDecision.PENDING
+                    ).count()
+                    if pending_count > 0:
+                        self.wait_for_review(run)
+                        self._record_event(
+                            run,
+                            WorkflowStage.REVIEW,
+                            "waiting",
+                            f"Workflow is waiting for human review of {pending_count} findings",
+                        )
+                finally:
+                    db.close()
 
         return result
 
