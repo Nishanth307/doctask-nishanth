@@ -67,7 +67,7 @@ DocTask is engineered as a cloud-native, decoupled system deployed across manage
 
 | Component | Cloud Platform / Service | Host / Resource | Configuration & Role |
 | :--- | :--- | :--- | :--- |
-| **Frontend UI** | **Vercel** | `https://doctask-nishanth.vercel.app`<br>`https://frontend-alpha-flame-36.vercel.app` | React 18 + Vite SPA, edge-distributed CDN. Auto-deployed on push with CORS regex matching `https://.*\.vercel\.app`. |
+| **Frontend UI** | **Vercel** | [`https://frontend-alpha-flame-36.vercel.app/runs`](https://frontend-alpha-flame-36.vercel.app/runs) | React 18 + Vite SPA, edge-distributed CDN. Auto-deployed on push with CORS regex matching `https://.*\.vercel\.app`. |
 | **Backend API & Workflow** | **Google Cloud Run** *(primary)*<br>**Render Web Service** *(backup)* | Containerized Service (`us-central1` / Oregon) | Fully managed serverless container running FastAPI, LangGraph orchestration, and FastMCP. Scales automatically with dynamic `$PORT` routing. |
 | **Relational & Vector DB** | **Render Managed PostgreSQL** | `oregon-postgres.render.com:5432/doctask_3bbu` | PostgreSQL with `pgvector` extension. Houses domain entities and LangGraph `PostgresSaver` checkpoint blobs. |
 | **File & Artifact Storage** | **Google Cloud Storage (GCS)** | Bucket: `nishanth-billing-sandbox-storage` | Object storage for uploaded contracts (PDF/DOCX), playbooks, and generated reports via `GoogleCloudStorageAdapter`. |

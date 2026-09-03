@@ -1,5 +1,8 @@
 # doctask-nishanth 
 
+> 🌐 **Live Application Dashboard**: [https://frontend-alpha-flame-36.vercel.app/runs](https://frontend-alpha-flame-36.vercel.app/runs)
+
+```
 doctask-nishanth/
 ├── README.md                      # setup, architecture, supported formats, assumptions, trade-offs
 ├── TASK.md                        # instructions and workflow followed while building
@@ -116,8 +119,11 @@ doctask-nishanth/
     ├── api.md                     # API documentation
     ├── decisions.md               # architectural decisions and trade-offs
     └── writeup.md                 # Task 4 one-page write-up
+```
 
+### Relational Domain Model
 
+```text
                          ┌──────────────┐
                          │     Run      │
                          └──────┬───────┘
@@ -140,6 +146,7 @@ Run
  └───────────────*
                  │
           WorkflowEvent
+```
 
 
 ## Kill and Resume
@@ -221,7 +228,7 @@ DocTask implements robust model fallback mechanism to secure workflow executions
 DocTask is deployed across cloud infrastructure:
 
 ### Architecture Mapping
-- **Frontend Dashboard**: Deployed on [Vercel](https://doctask-nishanth.vercel.app) (`https://doctask-nishanth.vercel.app` & `https://frontend-alpha-flame-36.vercel.app`).
+- **Frontend Dashboard**: Deployed on [Vercel](https://frontend-alpha-flame-36.vercel.app/runs) (`https://frontend-alpha-flame-36.vercel.app/runs`).
 - **Backend API & LangGraph Engine**: Containerized on **Google Cloud Run** (with fallback on Render Web Service), listening on dynamic `${PORT:-8080}` with automatic Alembic migrations on startup.
 - **Database & Checkpointer**: Managed **PostgreSQL with `pgvector`** (Render PostgreSQL, Oregon) storing relational entities and LangGraph checkpoints.
 - **Object Storage**: **Google Cloud Storage (GCS)** (`nishanth-billing-sandbox-storage`) managed via `GoogleCloudStorageAdapter` for persistent document and report storage.

@@ -6,12 +6,13 @@ This document provides a comprehensive technical reference for the DocTask REST 
 
 ## 1. Overview & Connection Details
 
+- **Live Frontend Web App**: [https://frontend-alpha-flame-36.vercel.app/runs](https://frontend-alpha-flame-36.vercel.app/runs)
 - **Base URL**: `http://localhost:8000` (Local) / Custom Cloud Run/Render Host
 - **API Version Prefix**: `/api/v1`
 - **Supported Content Types**:
   - `application/json` (Standard payloads)
   - `multipart/form-data` (Document uploads and batch run creations)
-- **CORS Support**: Configurable via `CORS_ORIGINS` environment variable, with native support for `*.vercel.app` origins.
+- **CORS Support**: Configurable via `CORS_ORIGINS` environment variable, with native regex support for `*.vercel.app` origins.
 
 ---
 
