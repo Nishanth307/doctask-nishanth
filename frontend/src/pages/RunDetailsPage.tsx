@@ -1,17 +1,26 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link, useParams } from "react-router-dom";
+import {
+  ArrowLeft,
+  Play,
+  FileText,
+  BookOpen,
+  Calendar,
+  AlertCircle,
+  RotateCcw,
+} from "lucide-react";
 
 import { getRunDetails, startRun } from "../api/runs";
 import type { RunDetailsResponse } from "../api/types";
-import { RunTimeline } from "../components/RunTimeline";
+import { StatusBadge } from "../components/common/StatusBadge";
+import { WorkflowStepper } from "../components/workflow/WorkflowStepper";
 import { ReviewQueue } from "../components/review/ReviewQueue";
 import { FindingsList } from "../components/findings/FindingsList";
 import { ReportView } from "../components/findings/ReportView";
-import { WorkflowResultView } from "../components/workflow/WorkflowResultView";
-import { WorkflowTimeline } from "../components/workflow/WorkflowTimeline";
+import { ExecutionDetails } from "../components/workflow/ExecutionDetails";
 import { useRunPolling } from "../hooks/useRunPolling";
 
-function RunDetailsPage() {
+export function RunDetailsPage() {
   const { runId } = useParams<{ runId: string }>();
 
   const [details, setDetails] = useState<RunDetailsResponse | null>(null);
@@ -85,8 +94,6 @@ function RunDetailsPage() {
       });
   };
 
-
-
   async function handleStart() {
     if (!runId) {
       return;
@@ -112,136 +119,140 @@ function RunDetailsPage() {
 
   if (loading) {
     return (
-      <main>
-        <p>Loading run details...</p>
+      <main className="details-container">
+        <div className="details-loading-state">
+          <div className="spinner-saas" />
+          <p>Loading contract review session...</p>
+        </div>
       </main>
     );
   }
 
   if (error && !run) {
     return (
-      <main>
-        <div role="alert" className="error-alert">
-          <h2>Unable to load run</h2>
-          <p>{error}</p>
-          <button type="button" onClick={handleRetry}>
-            Retry
-          </button>
+      <main className="details-container">
+        <div role="alert" className="error-alert-card">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="text-rose-600" size={24} />
+            <div>
+              <h2 className="text-lg font-semibold text-rose-900">Unable to load run</h2>
+              <p className="text-sm text-rose-700">{error}</p>
+            </div>
+          </div>
+          <div className="mt-4 flex items-center gap-3">
+            <button type="button" onClick={handleRetry} className="btn-secondary flex items-center gap-2">
+              <RotateCcw size={14} /> Retry
+            </button>
+            <Link to="/runs" className="back-link flex items-center gap-2">
+              <ArrowLeft size={16} /> Back to Runs
+            </Link>
+          </div>
         </div>
-        <Link to="/runs">← Back to Runs</Link>
       </main>
     );
   }
 
   if (!run || !details) {
     return (
-      <main>
-        <p>Run not found.</p>
-        <Link to="/runs">← Back to Runs</Link>
+      <main className="details-container">
+        <div className="card empty-card">
+          <p>Run not found.</p>
+          <Link to="/runs" className="back-link mt-4 flex items-center gap-2">
+            <ArrowLeft size={16} /> Back to Runs
+          </Link>
+        </div>
       </main>
     );
   }
 
+  const sourceDocs = run.documents?.filter((d) => !d.is_rules) || [];
+  const ruleDocs = run.documents?.filter((d) => d.is_rules) || [];
+
   return (
-    <main>
-      <Link to="/runs">← Back to Runs</Link>
+    <main className="details-container">
+      {/* Navigation Breadcrumb */}
+      <div className="details-nav-row">
+        <Link to="/runs" className="back-link flex items-center gap-2">
+          <ArrowLeft size={16} /> Back to Runs
+        </Link>
+      </div>
 
-      <h1>{run.name}</h1>
+      {/* Contract Review SaaS Header */}
+      <header className="contract-review-header">
+        <div className="header-primary-content">
+          <div className="header-meta-sup">
+            <span className="contract-category-label">Contract Review</span>
+            {run.parent_id && (
+              <span className="incremental-badge">Incremental Update</span>
+            )}
+          </div>
 
-      <section>
-        <p>
-          <strong>Status:</strong>{" "}
-          <span className={`status-badge status-${run.status}`} style={{ display: "inline-flex", verticalAlign: "middle" }}>
-            {run.status === "running" && <span className="running-dot">●</span>}
-            {run.status === "waiting_for_review" && "⚠ "}
-            {run.status === "completed" && "✓ "}
-            {run.status === "failed" && "✕ "}
-            {run.status.replaceAll("_", " ")}
-          </span>
-        </p>
+          <div className="header-title-row">
+            <h1 className="contract-title">{run.name}</h1>
+            <StatusBadge status={run.status} size="lg" />
+          </div>
 
-        <p>
-          <strong>Stage:</strong> {run.stage}
-        </p>
+          <div className="header-metadata-row">
+            <div className="meta-item">
+              <Calendar size={14} className="text-slate-400" />
+              <span>Created {new Date(run.created_at).toLocaleDateString()} at {new Date(run.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+            </div>
 
-        <p>
-          <strong>Created:</strong>{" "}
-          {new Date(run.created_at).toLocaleString()}
-        </p>
-
-        <p>
-          <strong>Updated:</strong>{" "}
-          {new Date(run.updated_at).toLocaleString()}
-        </p>
-
-        {run.completed_at && (
-          <p>
-            <strong>Completed:</strong>{" "}
-            {new Date(run.completed_at).toLocaleString()}
-          </p>
-        )}
-
-        {run.error_message && (
-          <p>
-            <strong>Error:</strong> {run.error_message}
-          </p>
-        )}
-
-        {run.documents && run.documents.length > 0 && (
-          <div style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
-            <div>
-              <strong style={{ display: "block", marginBottom: "4px" }}>Source Documents</strong>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                {run.documents.filter(d => !d.is_rules).map((doc) => (
-                  <span key={doc.id} className="badge" style={{ backgroundColor: "#f1f5f9", padding: "4px 8px", borderRadius: "4px", fontSize: "13px" }}>
-                    📄 {doc.filename}
+            {sourceDocs.length > 0 && (
+              <div className="doc-pill-list">
+                {sourceDocs.map((doc) => (
+                  <span key={doc.id} className="doc-chip doc-chip-source" title={`Source Document: ${doc.filename}`}>
+                    <FileText size={13} />
+                    <span>{doc.filename}</span>
                   </span>
                 ))}
-                {run.documents.filter(d => !d.is_rules).length === 0 && (
-                  <span style={{ color: "#64748b", fontSize: "13px" }}>No source documents</span>
-                )}
               </div>
-            </div>
-            <div>
-              <strong style={{ display: "block", marginBottom: "4px" }}>Review Rules</strong>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                {run.documents.filter(d => d.is_rules).map((doc) => (
-                  <span key={doc.id} className="badge" style={{ backgroundColor: "#f1f5f9", padding: "4px 8px", borderRadius: "4px", fontSize: "13px" }}>
-                    📋 {doc.filename} (Playbook)
+            )}
+
+            {ruleDocs.length > 0 && (
+              <div className="doc-pill-list">
+                {ruleDocs.map((doc) => (
+                  <span key={doc.id} className="doc-chip doc-chip-rule" title={`Playbook Rules: ${doc.filename}`}>
+                    <BookOpen size={13} />
+                    <span>{doc.filename}</span>
                   </span>
                 ))}
-                {run.documents.filter(d => d.is_rules).length === 0 && (
-                  <span style={{ color: "#64748b", fontSize: "13px" }}>No review rules document</span>
-                )}
               </div>
-            </div>
+            )}
+          </div>
+        </div>
+
+        {/* Primary Header Action */}
+        {run.status === "pending" && (
+          <div className="header-action-panel">
+            <button
+              type="button"
+              onClick={handleStart}
+              disabled={starting}
+              className="btn-start-workflow flex items-center gap-2"
+            >
+              <Play size={16} fill="currentColor" />
+              {starting ? "Starting Workflow..." : "Start Workflow"}
+            </button>
           </div>
         )}
-      </section>
+      </header>
 
-      {run.status === "pending" && (
-        <button
-          type="button"
-          onClick={handleStart}
-          disabled={starting}
-        >
-          {starting ? "Starting..." : "Start Workflow"}
-        </button>
+      {actionError && (
+        <div role="alert" className="error-alert-banner">
+          <AlertCircle size={16} />
+          <span>{actionError}</span>
+        </div>
       )}
 
-      {run.status === "running" && (
-        <p className="processing-indicator">Workflow is processing...</p>
-      )}
+      {/* Visual Stepper Timeline */}
+      <WorkflowStepper
+        events={details.workflow_events}
+        currentStage={run.stage}
+        runStatus={run.status}
+      />
 
-      {run.status === "failed" && (
-        <section className="card failed-card" role="alert">
-          <h2>Workflow Failed</h2>
-          <p>
-            {run.error_message ?? "The workflow failed unexpectedly."}
-          </p>
-        </section>
-      )}
-
+      {/* Human Review Queue (Two-Column Interface) */}
       {run.status === "waiting_for_review" && (
         <ReviewQueue
           runId={run.id}
@@ -250,24 +261,27 @@ function RunDetailsPage() {
         />
       )}
 
-      {actionError && <p role="alert" className="error-message">{actionError}</p>}
-      {error && <p>{error}</p>}
-
-      <RunTimeline
-        events={details.workflow_events}
-        currentStage={run.stage}
-        runStatus={run.status}
-      />
-
-      <WorkflowTimeline events={details.workflow_events} />
-
-      <FindingsList findings={details.findings} />
-
+      {/* Final Deliverable Report */}
       <ReportView report={details.report} />
 
-      <WorkflowResultView
-        result={details.workflow_result}
+      {/* Reconciled Findings List (when not in active review gate) */}
+      {run.status !== "waiting_for_review" && details.findings.length > 0 && (
+        <FindingsList findings={details.findings} />
+      )}
+
+      {/* Secondary Collapsible Execution Details Accordion */}
+      <ExecutionDetails
+        runId={run.id}
+        workflowId={details.workflow_result?.id}
+        parentId={run.parent_id}
+        currentStage={run.stage}
         runStatus={run.status}
+        createdAt={run.created_at}
+        updatedAt={run.updated_at}
+        completedAt={run.completed_at}
+        errorMessage={run.error_message}
+        events={details.workflow_events}
+        workflowResult={details.workflow_result}
       />
     </main>
   );

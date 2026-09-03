@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { FileText, X, AlertCircle } from "lucide-react";
 
 interface DocumentUploadProps {
   files: File[];
@@ -170,8 +171,8 @@ export function DocumentUpload({
                   fontSize: "14px",
                 }}
               >
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  📄 {file.name} ({(file.size / (1024 * 1024)).toFixed(2)} MB)
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <FileText size={14} className="text-slate-500" /> {file.name} ({(file.size / (1024 * 1024)).toFixed(2)} MB)
                 </span>
                 <button
                   type="button"
@@ -185,11 +186,13 @@ export function DocumentUpload({
                     border: "none",
                     color: "#ef4444",
                     cursor: "pointer",
-                    fontSize: "16px",
-                    padding: "0 4px",
+                    padding: "2px",
+                    display: "inline-flex",
+                    alignItems: "center",
                   }}
+                  aria-label={`Remove ${file.name}`}
                 >
-                  ×
+                  <X size={15} />
                 </button>
               </div>
             ))}
@@ -219,8 +222,8 @@ export function DocumentUpload({
                   color: "#991b1b",
                 }}
               >
-                <span>
-                  ✕ {rejected.name} — <strong style={{ fontSize: "12px" }}>{rejected.reason}</strong>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                  <AlertCircle size={14} /> {rejected.name} — <strong style={{ fontSize: "12px" }}>{rejected.reason}</strong>
                 </span>
                 <button
                   type="button"
@@ -233,11 +236,13 @@ export function DocumentUpload({
                     border: "none",
                     color: "#991b1b",
                     cursor: "pointer",
-                    fontSize: "16px",
-                    padding: "0 4px",
+                    padding: "2px",
+                    display: "inline-flex",
+                    alignItems: "center",
                   }}
+                  aria-label={`Remove rejected ${rejected.name}`}
                 >
-                  ×
+                  <X size={15} />
                 </button>
               </div>
             ))}

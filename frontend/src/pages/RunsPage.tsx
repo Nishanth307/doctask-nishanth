@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DocumentUpload } from "../components/runs/DocumentUpload";
+import { StatusBadge } from "../components/common/StatusBadge";
+import { FileText, BookOpen, CornerDownRight } from "lucide-react";
 
 import {
   createRun,
@@ -299,32 +301,24 @@ export default function RunsPage() {
                       {run.name}
                     </h3>
                     {run.parent_id && (
-                      <span style={{ fontSize: "11px", color: "#0284c7", backgroundColor: "#e0f2fe", padding: "2px 6px", borderRadius: "4px", fontWeight: "bold", marginTop: "4px", display: "inline-block" }}>
-                        ↳ Incremental Update
+                      <span className="incremental-chip">
+                        <CornerDownRight size={12} /> Incremental Update
                       </span>
                     )}
                   </div>
-                  <span
-                    className={`status-badge status-${run.status}`}
-                  >
-                    {run.status === "running" && <span className="running-dot">●</span>}
-                    {run.status === "waiting_for_review" && "⚠ "}
-                    {run.status === "completed" && "✓ "}
-                    {run.status === "failed" && "✕ "}
-                    {run.status.replaceAll("_", " ")}
-                  </span>
+                  <StatusBadge status={run.status} size="sm" />
                 </div>
 
                 {run.documents && run.documents.length > 0 && (
                   <div className="run-card-documents">
                     {run.documents.filter(d => !d.is_rules).map((doc) => (
                       <div key={doc.id} className="run-card-document-item" title={doc.filename}>
-                        📄 {doc.filename}
+                        <FileText size={13} className="text-slate-400 inline mr-1" /> {doc.filename}
                       </div>
                     ))}
                     {run.documents.filter(d => d.is_rules).map((doc) => (
                       <div key={doc.id} className="run-card-document-item" title={doc.filename} style={{ fontStyle: "italic", color: "#64748b" }}>
-                        📋 {doc.filename} (Rules)
+                        <BookOpen size={13} className="text-slate-400 inline mr-1" /> {doc.filename} (Rules)
                       </div>
                     ))}
                   </div>

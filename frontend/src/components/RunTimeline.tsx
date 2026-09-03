@@ -1,3 +1,4 @@
+import { CheckCircle2, Loader2, AlertTriangle, XCircle, Circle } from "lucide-react";
 import type { WorkflowEventResponse, WorkflowStage } from "../api/types";
 
 interface RunTimelineProps {
@@ -17,12 +18,10 @@ const STAGES_ORDER: { stage: WorkflowStage; label: string }[] = [
 ];
 
 export function RunTimeline({ events, currentStage, runStatus }: RunTimelineProps) {
-  // Helper to find events for a specific stage
   const getStageEvents = (stage: WorkflowStage) => {
     return events.filter((e) => e.stage === stage);
   };
 
-  // Helper to determine the state of a stage
   const getStageState = (stage: WorkflowStage) => {
     const stageEvents = getStageEvents(stage);
     const hasCompleted = stageEvents.some((e) => e.status === "completed");
@@ -31,22 +30,16 @@ export function RunTimeline({ events, currentStage, runStatus }: RunTimelineProp
 
     if (hasFailed) return "failed";
     if (hasCompleted) return "completed";
-    
-    // If the run itself failed at this stage
     if (runStatus === "failed" && currentStage === stage) return "failed";
-    
-    // If the run is waiting for review at the review stage
     if (runStatus === "waiting_for_review" && stage === "review") return "waiting";
-
     if (currentStage === stage && runStatus === "running") return "running";
     if (hasStarted) return "running";
 
-    // Determine if it is past or future based on order
     const currentIndex = STAGES_ORDER.findIndex((s) => s.stage === currentStage);
     const stageIndex = STAGES_ORDER.findIndex((s) => s.stage === stage);
 
     if (stageIndex < currentIndex) {
-      return "completed"; // Assume completed if we are past it
+      return "completed";
     }
 
     return "pending";
@@ -61,20 +54,20 @@ export function RunTimeline({ events, currentStage, runStatus }: RunTimelineProp
           const stageEvents = getStageEvents(stage);
           const latestEvent = stageEvents[stageEvents.length - 1];
 
-          let icon = "○";
+          let icon = <Circle size={16} className="text-slate-300" />;
           let stateClass = "state-pending";
 
           if (state === "completed") {
-            icon = "✓";
+            icon = <CheckCircle2 size={16} className="text-emerald-500" />;
             stateClass = "state-completed";
           } else if (state === "failed") {
-            icon = "✗";
+            icon = <XCircle size={16} className="text-rose-500" />;
             stateClass = "state-failed";
           } else if (state === "running") {
-            icon = "→";
+            icon = <Loader2 size={16} className="text-blue-500 animate-spin" />;
             stateClass = "state-running";
           } else if (state === "waiting") {
-            icon = "⚠";
+            icon = <AlertTriangle size={16} className="text-amber-500" />;
             stateClass = "state-waiting";
           }
 
