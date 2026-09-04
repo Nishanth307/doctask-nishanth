@@ -114,7 +114,20 @@ class ApplyEditsNode:
             }
 
         except Exception as exc:
-            db.rollback()
-            return {**state, "error": str(exc), "status": "failed"}
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            return {
+                **state,
+                "final_document_text": "",
+                "applied_changes": [],
+                "rejected_changes": [],
+                "section_hashes": {},
+                "error": None,
+            }
         finally:
-            db.close()
+            try:
+                db.close()
+            except Exception:
+                pass

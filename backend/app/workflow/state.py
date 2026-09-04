@@ -6,6 +6,42 @@ from typing_extensions import TypedDict
 from app.llm.schemas import ClassificationResult, ExaminationResult
 
 
+class NodeError(TypedDict, total=False):
+    node_name: str
+    error_type: str
+    error_message: str
+    error_timestamp: str
+    retryable: bool
+    attempt: int
+    checkpoint_id: str | None
+    reason: str | None
+    provider: str | None
+    model: str | None
+    fallback_level: int | None
+    fallback_used: bool | None
+    provider_attempts: list[dict[str, Any]] | None
+
+
+class NodeExecutionRecord(TypedDict, total=False):
+    node_name: str
+    status: str
+    attempt: int
+    duration_ms: int | None
+    error_type: str | None
+    error_message: str | None
+    retryable: bool | None
+    timestamp: str
+    provider: str | None
+    model: str | None
+    fallback_level: int | None
+    fallback_used: bool | None
+    provider_attempts: list[dict[str, Any]] | None
+    input_tokens: int | None
+    output_tokens: int | None
+    total_tokens: int | None
+
+
+
 class WorkflowState(TypedDict, total=False):
     run_id: UUID
     document_ids: list[UUID]
@@ -30,6 +66,12 @@ class WorkflowState(TypedDict, total=False):
     suggested_changes: list[dict[str, Any]]
     status: str | None
     result_id: UUID | None
+
+    # --- Node-level Error Observability & Execution History ---
+    execution_history: list[dict[str, Any]]
+    last_error: dict[str, Any] | None
+    current_node: str | None
+    node_attempts: dict[str, int]
 
     # --- Document Lifecycle: Mutation & Final Artifact ---
     # The actual mutated final contract text (distinct from the audit report)

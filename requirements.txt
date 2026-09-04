@@ -21,6 +21,8 @@ langchain
 langchain-core
 langchain-community
 langchain-google-genai
+langchain-openai
+langchain-groq
 langgraph-checkpoint-postgres
 psycopg_pool
 

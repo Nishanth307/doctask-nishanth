@@ -93,6 +93,50 @@ class WorkflowService:
             "state": state_values,
         }
 
+    def retry_node(
+        self,
+        thread_id: str,
+        node_name: str,
+    ) -> dict[str, Any]:
+        from langgraph.graph import START
+        from app.workflow.graph import UPSTREAM_NODE_MAP
+
+        config = {
+            "configurable": {
+                "thread_id": thread_id,
+            }
+        }
+
+        upstream_node = UPSTREAM_NODE_MAP.get(node_name, START)
+        # Update state rewinding to upstream node checkpoint and clearing previous error
+        self.graph.update_state(
+            config,
+            {
+                "error": None,
+                "current_node": node_name,
+                "status": "running",
+            },
+            as_node=upstream_node,
+        )
+
+        result = self.graph.invoke(
+            None,
+            config=config,
+        )
+
+        state_values = dict(result) if isinstance(result, dict) else {}
+        try:
+            snapshot = self.graph.get_state(config)
+            if hasattr(snapshot, "values") and isinstance(snapshot.values, dict) and snapshot.values:
+                state_values = {**state_values, **snapshot.values}
+        except Exception:
+            pass
+
+        return {
+            "thread_id": thread_id,
+            "state": state_values,
+        }
+
     def get_state(
         self,
         thread_id: str,

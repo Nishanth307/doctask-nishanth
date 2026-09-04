@@ -36,11 +36,14 @@ def get_pool() -> ConnectionPool:
 
 
 def create_checkpointer():
+    import os
+    import sys
+
     if (
         "sqlite" in settings.DATABASE_URL
         or getattr(settings, "ENVIRONMENT", "") == "test"
-        or "localhost" in settings.DATABASE_URL
-        or "127.0.0.1" in settings.DATABASE_URL
+        or "PYTEST_CURRENT_TEST" in os.environ
+        or any("pytest" in arg for arg in sys.argv)
     ):
         from langgraph.checkpoint.memory import MemorySaver
         saver = MemorySaver()

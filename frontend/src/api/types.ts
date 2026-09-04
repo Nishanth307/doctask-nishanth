@@ -12,6 +12,10 @@ export type WorkflowStage =
   | "extraction"
   | "reconciliation"
   | "examination"
+  | "generate_changes"
+  | "findings_review"
+  | "apply_edits"
+  | "validate_edits"
   | "update"
   | "review"
   | "commit";
@@ -139,12 +143,88 @@ export interface ReportResponse {
   section_hashes: Record<string, SectionHashInfo> | null;
 }
 
+export type ErrorCategory =
+  | "TRANSIENT"
+  | "PERMANENT"
+  | "VALIDATION"
+  | "CONFIGURATION"
+  | "DEPENDENCY"
+  | "TIMEOUT"
+  | "RATE_LIMIT"
+  | "QUOTA_EXHAUSTED"
+  | "NETWORK_ERROR"
+  | "PROVIDER_UNAVAILABLE"
+  | "AUTHENTICATION_ERROR"
+  | "INVALID_REQUEST"
+  | "MODEL_NOT_FOUND"
+  | "CONTEXT_LENGTH"
+  | "STRUCTURED_OUTPUT_ERROR"
+  | "DATABASE"
+  | "STORAGE"
+  | "LLM"
+  | "DOCUMENT_PROCESSING"
+  | "UNKNOWN";
+
+export interface ProviderAttempt {
+  provider: string;
+  model: string;
+  attempt: number;
+  fallback_level: number;
+  latency_ms?: number;
+  status: "completed" | "failed";
+  error_type?: string;
+  error_message?: string;
+  retryable?: boolean;
+}
+
+export interface NodeError {
+  node_name: string;
+  error_type: ErrorCategory | string;
+  error_message: string;
+  error_timestamp: string;
+  retryable: boolean;
+  attempt: number;
+  checkpoint_id?: string | null;
+  reason?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  fallback_level?: number | null;
+  fallback_used?: boolean | null;
+  provider_attempts?: ProviderAttempt[] | null;
+}
+
+export interface NodeExecutionRecord {
+  node_name: string;
+  status: "started" | "completed" | "failed" | string;
+  attempt: number;
+  duration_ms?: number | null;
+  error_type?: ErrorCategory | string | null;
+  error_message?: string | null;
+  retryable?: boolean | null;
+  timestamp: string;
+  provider?: string | null;
+  model?: string | null;
+  fallback_level?: number | null;
+  fallback_used?: boolean | null;
+  provider_attempts?: ProviderAttempt[] | null;
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  total_tokens?: number | null;
+}
+
+
 export interface WorkflowEventResponse {
   id: string;
+  run_id?: string;
   stage: WorkflowStage;
   status: string;
   message: string | null;
   duration_ms: number | null;
+  node_name?: string | null;
+  error_type?: ErrorCategory | string | null;
+  attempt?: number | null;
+  retryable?: boolean | null;
+  checkpoint_id?: string | null;
   created_at: string;
 }
 
@@ -166,6 +246,8 @@ export interface RunDetailsResponse {
   report: ReportResponse | null;
   workflow_events: WorkflowEventResponse[];
   workflow_result: WorkflowResultResponse | null;
+  execution_history?: NodeExecutionRecord[];
+  last_error?: NodeError | null;
 }
 
 export interface ReviewResponse {

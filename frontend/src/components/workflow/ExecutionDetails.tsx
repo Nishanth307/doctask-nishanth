@@ -189,6 +189,11 @@ export const ExecutionDetails: React.FC<ExecutionDetailsProps> = ({
                           <span className="event-stage-tag">
                             {event.stage.replaceAll("_", " ")}
                           </span>
+                          {event.node_name && (
+                            <span className="event-node-tag font-mono" style={{ fontSize: "11px", color: "#64748b", background: "#f1f5f9", padding: "1px 6px", borderRadius: "4px" }}>
+                              {event.node_name}
+                            </span>
+                          )}
                           <span className="event-status-tag">
                             {event.status}
                           </span>

@@ -3,6 +3,8 @@ from enum import StrEnum
 
 class ModelProvider(StrEnum):
     GEMINI = "gemini"
+    GROQ = "groq"
+    OPENROUTER = "openrouter"
     OLLAMA = "ollama"
 
 class ModelName(StrEnum):

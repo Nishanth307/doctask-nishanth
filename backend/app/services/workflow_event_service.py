@@ -21,6 +21,11 @@ class WorkflowEventService:
         status: str,
         message: str | None = None,
         duration_ms: int | None = None,
+        node_name: str | None = None,
+        error_type: str | None = None,
+        attempt: int = 1,
+        retryable: bool | None = None,
+        checkpoint_id: str | None = None,
     ) -> WorkflowEvent:
         event = WorkflowEvent(
             run_id=run_id,
@@ -28,6 +33,11 @@ class WorkflowEventService:
             status=status,
             message=message,
             duration_ms=duration_ms,
+            node_name=node_name,
+            error_type=error_type,
+            attempt=attempt,
+            retryable=retryable,
+            checkpoint_id=checkpoint_id,
         )
 
         return self.repository.create(event)

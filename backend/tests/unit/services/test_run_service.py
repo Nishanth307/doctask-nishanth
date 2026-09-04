@@ -435,6 +435,34 @@ class TestRunService:
                 "approve",
             )
 
+    def test_retry_workflow_success(self):
+        run = Run(
+            id=uuid4(),
+            name="Contract Review",
+            status=RunStatus.FAILED,
+            stage=WorkflowStage.CLASSIFICATION,
+            error_message="Transient error",
+            thread_id="old-thread",
+        )
+        self.workflow_service.start.return_value = {
+            "thread_id": "new-thread",
+            "state": {"status": "completed"},
+        }
+        result = self.service.retry_workflow(run)
+        assert result["thread_id"] == "new-thread"
+        assert run.error_message is None
+        assert run.thread_id != "old-thread"
+
+    def test_retry_workflow_rejects_non_failed_run(self):
+        run = Run(
+            id=uuid4(),
+            name="Contract Review",
+            status=RunStatus.RUNNING,
+            stage=WorkflowStage.CLASSIFICATION,
+        )
+        with pytest.raises(ValueError, match="Only failed runs can be retried"):
+            self.service.retry_workflow(run)
+
     def test_start_workflow_records_started_event(self):
         run = Run(
             id=uuid4(),

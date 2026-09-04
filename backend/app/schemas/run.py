@@ -62,7 +62,48 @@ class WorkflowEventResponse(BaseModel):
     status: str
     message: str | None
     duration_ms: int | None
+    node_name: str | None = None
+    error_type: str | None = None
+    attempt: int | None = None
+    retryable: bool | None = None
+    checkpoint_id: str | None = None
     created_at: datetime
+
+
+class NodeErrorResponse(BaseModel):
+    node_name: str
+    error_type: str
+    error_message: str
+    error_timestamp: str
+    retryable: bool
+    attempt: int = 1
+    checkpoint_id: str | None = None
+    reason: str | None = None
+    provider: str | None = None
+    model: str | None = None
+    fallback_level: int | None = None
+    fallback_used: bool | None = None
+    provider_attempts: list[dict[str, Any]] | None = None
+
+
+class NodeExecutionRecordResponse(BaseModel):
+    node_name: str
+    status: str
+    attempt: int
+    duration_ms: int | None = None
+    error_type: str | None = None
+    error_message: str | None = None
+    retryable: bool | None = None
+    timestamp: str
+    provider: str | None = None
+    model: str | None = None
+    fallback_level: int | None = None
+    fallback_used: bool | None = None
+    provider_attempts: list[dict[str, Any]] | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+
 
 
 class FindingResponse(BaseModel):
@@ -144,6 +185,8 @@ class RunDetailsResponse(BaseModel):
     report: ReportResponse | None
     workflow_events: list[WorkflowEventResponse]
     workflow_result: WorkflowResultResponse | None
+    execution_history: list[NodeExecutionRecordResponse] = []
+    last_error: NodeErrorResponse | None = None
 
 
 class ReviewResponse(BaseModel):

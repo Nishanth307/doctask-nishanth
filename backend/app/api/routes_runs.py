@@ -240,6 +240,95 @@ def start_workflow(
 
 
 @router.post(
+    "/{run_id}/retry",
+    response_model=WorkflowRunResponse,
+)
+def retry_workflow(
+    run_id: UUID,
+    db: Session = Depends(get_db),  # noqa: B008
+    service: RunService = Depends(get_run_service),  # noqa: B008
+) -> WorkflowRunResponse:
+    run = service.get_run(run_id)
+
+    if run is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Run not found",
+        )
+
+    try:
+        result = service.retry_workflow(run)
+
+        db.commit()
+        db.refresh(run)
+
+        return WorkflowRunResponse(
+            thread_id=result["thread_id"],
+            state=result["state"],
+        )
+
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    except Exception as exc:
+        service.fail_run(run, str(exc))
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Workflow could not be retried",
+        ) from exc
+
+
+@router.post(
+    "/{run_id}/retry/{node_name}",
+    response_model=WorkflowRunResponse,
+)
+def retry_node(
+    run_id: UUID,
+    node_name: str,
+    db: Session = Depends(get_db),  # noqa: B008
+    service: RunService = Depends(get_run_service),  # noqa: B008
+) -> WorkflowRunResponse:
+    run = service.get_run(run_id)
+
+    if run is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Run not found",
+        )
+
+    try:
+        result = service.retry_node(run, node_name)
+
+        db.commit()
+        db.refresh(run)
+
+        return WorkflowRunResponse(
+            thread_id=result["thread_id"],
+            state=result["state"],
+        )
+
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    except Exception as exc:
+        service.fail_run(run, str(exc))
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retry node '{node_name}': {str(exc)}",
+        ) from exc
+
+
+@router.post(
     "/{run_id}/decision",
     response_model=WorkflowRunResponse,
 )
@@ -364,6 +453,8 @@ def get_run_details(
         report=result["report"],
         workflow_events=result["workflow_events"],
         workflow_result=result["workflow_result"],
+        execution_history=result.get("execution_history") or [],
+        last_error=result.get("last_error"),
     )
 
 

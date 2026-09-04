@@ -8,7 +8,7 @@ class ExtractNode:
     def __init__(
         self,
         model_factory: ModelFactory,
-        model_name: ModelName,
+        model_name: ModelName | str | None = None,
     ) -> None:
         self.model_factory = model_factory
         self.model_name = model_name

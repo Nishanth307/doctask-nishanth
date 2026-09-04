@@ -3,6 +3,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
+from app.core.constants import RunStatus
 from app.core.database import get_db
 from app.api.routes_runs import get_run_service
 from app.main import app
@@ -81,6 +82,40 @@ class TestRunRoutes:
 
         assert body["thread_id"] == str(run_id)
         assert body["state"]["retry_count"] == 0
+
+    def test_retry_workflow_run_not_found(self):
+        run_id = uuid4()
+        self.service.get_run.return_value = None
+
+        response = self.client.post(
+            f"/api/v1/runs/{run_id}/retry",
+        )
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Run not found"
+
+    def test_retry_workflow_success(self):
+        run_id = uuid4()
+        run = create_mock_run(run_id)
+        run.status = RunStatus.FAILED
+
+        self.service.get_run.return_value = run
+        self.service.retry_workflow.return_value = {
+            "thread_id": str(run_id),
+            "state": {
+                "run_id": run_id,
+                "status": "running",
+            },
+        }
+
+        response = self.client.post(
+            f"/api/v1/runs/{run_id}/retry",
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["thread_id"] == str(run_id)
+        assert body["state"]["status"] == "running"
 
     def test_submit_approve_decision(self):
         run_id = uuid4()
@@ -447,3 +482,86 @@ class TestRunRoutes:
         body = response.json()
         assert len(body) == 1
         assert body[0]["name"] == run.name
+
+    def test_retry_node_success(self):
+        run_id = uuid4()
+        run = create_mock_run(run_id=run_id)
+        run.status = RunStatus.FAILED
+        self.service.get_run.return_value = run
+        self.service.retry_node.return_value = {
+            "thread_id": "thread-123",
+            "state": {"status": "completed", "current_node": "extract"},
+        }
+
+        response = self.client.post(f"/api/v1/runs/{run_id}/retry/extract")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["thread_id"] == "thread-123"
+        assert body["state"]["status"] == "completed"
+        self.service.retry_node.assert_called_once_with(run, "extract")
+
+    def test_retry_node_not_found(self):
+        run_id = uuid4()
+        self.service.get_run.return_value = None
+
+        response = self.client.post(f"/api/v1/runs/{run_id}/retry/extract")
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Run not found"
+
+    def test_get_run_details_with_error_and_history(self):
+        run_id = uuid4()
+        run = create_mock_run(run_id=run_id)
+        run.status = RunStatus.FAILED
+
+        self.service.get_run_details.return_value = {
+            "run": run,
+            "findings": [],
+            "report": None,
+            "workflow_events": [],
+            "workflow_result": None,
+            "execution_history": [
+                {
+                    "node_name": "classify",
+                    "status": "completed",
+                    "attempt": 1,
+                    "duration_ms": 150,
+                    "error_type": None,
+                    "error_message": None,
+                    "retryable": None,
+                    "timestamp": "2026-09-04T00:00:00Z",
+                },
+                {
+                    "node_name": "extract",
+                    "status": "failed",
+                    "attempt": 1,
+                    "duration_ms": 200,
+                    "error_type": "LLM",
+                    "error_message": "LLM Rate Limit",
+                    "retryable": True,
+                    "timestamp": "2026-09-04T00:00:01Z",
+                },
+            ],
+            "last_error": {
+                "node_name": "extract",
+                "error_type": "LLM",
+                "error_message": "LLM Rate Limit",
+                "error_timestamp": "2026-09-04T00:00:01Z",
+                "retryable": True,
+                "attempt": 1,
+                "checkpoint_id": "cp-1",
+                "reason": None,
+            },
+        }
+
+        response = self.client.get(f"/api/v1/runs/{run_id}/details")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body["execution_history"]) == 2
+        assert body["execution_history"][1]["node_name"] == "extract"
+        assert body["execution_history"][1]["status"] == "failed"
+        assert body["last_error"]["node_name"] == "extract"
+        assert body["last_error"]["error_type"] == "LLM"
+        assert body["last_error"]["retryable"] is True

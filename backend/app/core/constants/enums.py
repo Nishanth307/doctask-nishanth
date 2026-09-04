@@ -6,6 +6,8 @@ class LLMProvider(str, Enum):
     GEMINI = "gemini"
     OLLAMA = "ollama"
     OPENAI = "openai"
+    GROQ = "groq"
+    OPENROUTER = "openrouter"
 
 
 class GeminiModel(str, Enum):
@@ -38,6 +40,10 @@ class WorkflowStage(str, Enum):
     EXTRACTION = "extraction"
     RECONCILIATION = "reconciliation"
     EXAMINATION = "examination"
+    GENERATE_CHANGES = "generate_changes"
+    FINDINGS_REVIEW = "findings_review"
+    APPLY_EDITS = "apply_edits"
+    VALIDATE_EDITS = "validate_edits"
     UPDATE = "update"
     REVIEW = "review"
     COMMIT = "commit"

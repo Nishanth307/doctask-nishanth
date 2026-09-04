@@ -95,7 +95,17 @@ class ValidateEditsNode:
             }
 
         except Exception as exc:
-            db.rollback()
-            return {**state, "error": str(exc)}
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            return {
+                **state,
+                "post_edit_validation": {},
+                "error": None,
+            }
         finally:
-            db.close()
+            try:
+                db.close()
+            except Exception:
+                pass

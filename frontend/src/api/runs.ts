@@ -56,6 +56,29 @@ export function startRun(
     );
 }
 
+export function retryRun(
+    runId: string,
+): Promise<WorkflowRunResponse> {
+    return apiClient<WorkflowRunResponse>(
+        `/runs/${runId}/retry`,
+        {
+            method: "POST",
+        },
+    );
+}
+
+export function retryNode(
+    runId: string,
+    nodeName: string,
+): Promise<WorkflowRunResponse> {
+    return apiClient<WorkflowRunResponse>(
+        `/runs/${runId}/retry/${encodeURIComponent(nodeName)}`,
+        {
+            method: "POST",
+        },
+    );
+}
+
 export function getRunReview(
     runId: string,
 ): Promise<ReviewResponse> {

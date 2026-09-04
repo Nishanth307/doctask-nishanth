@@ -26,7 +26,7 @@ class GenerateSuggestedChangesNode:
     def __init__(
         self,
         model_factory: ModelFactory,
-        model_name: ModelName,
+        model_name: ModelName | str | None = None,
     ) -> None:
         self.model_factory = model_factory
         self.model_name = model_name
@@ -117,63 +117,63 @@ Return a structured list of proposals, one for each issue.
 
             # Sync proposals into DB Finding records
             if run_id and proposals:
-                from app.core.database import SessionLocal
-                from app.persistence.models.finding import Finding
-                from app.core.constants import ReviewDecision
-
-                db = SessionLocal()
                 try:
-                    db_findings = db.query(Finding).filter(
-                        Finding.run_id == run_id,
-                        Finding.review_decision == ReviewDecision.PENDING
-                    ).all()
-                    
-                    matched_finding_ids = set()
-                    for proposal in proposals:
-                        target_finding = None
+                    from app.core.database import SessionLocal
+                    from app.persistence.models.finding import Finding
+                    from app.core.constants import ReviewDecision
+
+                    db = SessionLocal()
+                    try:
+                        db_findings = db.query(Finding).filter(
+                            Finding.run_id == run_id,
+                            Finding.review_decision == ReviewDecision.PENDING
+                        ).all()
                         
-                        # First try matching by exact or partial finding_id against finding description or title
-                        for f in db_findings:
-                            if f.id in matched_finding_ids:
-                                continue
-                            if proposal.finding_id and (
-                                proposal.finding_id.lower() in f.description.lower()
-                                or f.description.lower() in proposal.finding_id.lower()
-                                or proposal.finding_id.lower() in f.title.lower()
-                            ):
-                                target_finding = f
-                                break
-                        
-                        # If not matched yet, pick next available unmatched pending finding
-                        if not target_finding:
+                        matched_finding_ids = set()
+                        for proposal in proposals:
+                            target_finding = None
+                            
+                            # First try matching by exact or partial finding_id against finding description or title
                             for f in db_findings:
-                                if f.id not in matched_finding_ids:
+                                if f.id in matched_finding_ids:
+                                    continue
+                                if proposal.finding_id and (
+                                    proposal.finding_id.lower() in f.description.lower()
+                                    or f.description.lower() in proposal.finding_id.lower()
+                                    or proposal.finding_id.lower() in f.title.lower()
+                                ):
                                     target_finding = f
                                     break
+                            
+                            # If not matched yet, pick next available unmatched pending finding
+                            if not target_finding:
+                                for f in db_findings:
+                                    if f.id not in matched_finding_ids:
+                                        target_finding = f
+                                        break
 
-                        if target_finding:
-                            matched_finding_ids.add(target_finding.id)
-                            if proposal.change_type == ChangeType.REPLACE_TEXT and proposal.original_text and proposal.proposed_text:
-                                target_finding.original_value = proposal.original_text
-                                target_finding.proposed_value = proposal.proposed_text
-                                target_finding.proposed_edit = f"{proposal.original_text} → {proposal.proposed_text}"
-                                if proposal.source_location:
-                                    target_finding.source_location = proposal.source_location
-                            elif proposal.change_type in (ChangeType.NO_SAFE_EDIT, ChangeType.NEEDS_RESOLUTION):
-                                target_finding.original_value = proposal.original_text or target_finding.original_value
-                                target_finding.proposed_value = None
-                                target_finding.proposed_edit = None
-                                target_finding.review_decision = ReviewDecision.NEEDS_RESOLUTION
-                                if proposal.source_location:
-                                    target_finding.source_location = proposal.source_location
+                            if target_finding:
+                                matched_finding_ids.add(target_finding.id)
+                                if proposal.change_type == ChangeType.REPLACE_TEXT and proposal.original_text and proposal.proposed_text:
+                                    target_finding.original_value = proposal.original_text
+                                    target_finding.proposed_value = proposal.proposed_text
+                                    target_finding.proposed_edit = f"{proposal.original_text} → {proposal.proposed_text}"
+                                    if proposal.source_location:
+                                        target_finding.source_location = proposal.source_location
+                                elif proposal.change_type in (ChangeType.NO_SAFE_EDIT, ChangeType.NEEDS_RESOLUTION):
+                                    target_finding.original_value = proposal.original_text or target_finding.original_value
+                                    target_finding.proposed_value = None
+                                    target_finding.proposed_edit = None
+                                    target_finding.review_decision = ReviewDecision.NEEDS_RESOLUTION
+                                    if proposal.source_location:
+                                        target_finding.source_location = proposal.source_location
 
-                    db.commit()
+                        db.commit()
+                    finally:
+                        db.close()
                 except Exception as sync_exc:
-                    db.rollback()
                     from app.core.logging import logger
                     logger.warning(f"Error syncing proposals to findings in DB: {sync_exc}")
-                finally:
-                    db.close()
 
             proposals_dict = [p.model_dump() for p in proposals]
             return {

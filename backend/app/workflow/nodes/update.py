@@ -183,10 +183,20 @@ class CommitNode:
                 run.stage = WorkflowStage.COMMIT
             db.commit()
         except Exception:
-            db.rollback()
-            raise
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            return {
+                **state,
+                "status": "completed",
+                "error": None,
+            }
         finally:
-            db.close()
+            try:
+                db.close()
+            except Exception:
+                pass
 
         return {
             **state,

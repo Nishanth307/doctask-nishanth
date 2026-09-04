@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import Any, TYPE_CHECKING
-from uuid import UUID
+from uuid import UUID, uuid4
 from sqlalchemy.orm import Session
 
 from fastapi import UploadFile
@@ -75,12 +75,55 @@ class RunService:
             else None
         )
 
+        execution_history: list[dict[str, Any]] = []
+        last_error: dict[str, Any] | None = None
+
+        if self.workflow_service and run.thread_id:
+            try:
+                state_snapshot = self.workflow_service.get_state(run.thread_id)
+                if hasattr(state_snapshot, "values") and isinstance(state_snapshot.values, dict):
+                    execution_history = list(state_snapshot.values.get("execution_history") or [])
+                    last_error = state_snapshot.values.get("last_error")
+            except Exception:
+                pass
+
+        if not execution_history and workflow_events:
+            for ev in workflow_events:
+                if ev.node_name:
+                    execution_history.append({
+                        "node_name": ev.node_name,
+                        "status": ev.status,
+                        "attempt": getattr(ev, "attempt", 1) or 1,
+                        "duration_ms": ev.duration_ms,
+                        "error_type": getattr(ev, "error_type", None),
+                        "error_message": ev.message if ev.status == "failed" else None,
+                        "retryable": getattr(ev, "retryable", None),
+                        "timestamp": ev.created_at.isoformat() if ev.created_at else None,
+                    })
+
+        if not last_error:
+            failed_events = [ev for ev in workflow_events if ev.status == "failed" and ev.node_name]
+            if failed_events:
+                latest_failed = failed_events[-1]
+                last_error = {
+                    "node_name": latest_failed.node_name,
+                    "error_type": getattr(latest_failed, "error_type", None) or "UNKNOWN",
+                    "error_message": latest_failed.message,
+                    "error_timestamp": latest_failed.created_at.isoformat() if latest_failed.created_at else None,
+                    "retryable": getattr(latest_failed, "retryable", True),
+                    "attempt": getattr(latest_failed, "attempt", 1) or 1,
+                    "checkpoint_id": getattr(latest_failed, "checkpoint_id", None),
+                    "reason": None,
+                }
+
         return {
             "run": run,
             "findings": findings,
             "report": report,
             "workflow_events": workflow_events,
             "workflow_result": workflow_result,
+            "execution_history": execution_history,
+            "last_error": last_error,
         }
 
     def get_review(self, run_id: UUID) -> dict[str, Any] | None:
@@ -210,16 +253,36 @@ class RunService:
         stage: WorkflowStage,
         status: str,
         message: str | None = None,
+        node_name: str | None = None,
+        duration_ms: int | None = None,
+        error_type: str | None = None,
+        attempt: int | None = None,
+        retryable: bool | None = None,
+        checkpoint_id: str | None = None,
     ) -> None:
         if self.workflow_event_service is None:
             return
 
-        self.workflow_event_service.record(
-            run_id=run.id,
-            stage=stage,
-            status=status,
-            message=message,
-        )
+        kwargs: dict[str, Any] = {
+            "run_id": run.id,
+            "stage": stage,
+            "status": status,
+            "message": message,
+        }
+        if node_name is not None:
+            kwargs["node_name"] = node_name
+        if duration_ms is not None:
+            kwargs["duration_ms"] = duration_ms
+        if error_type is not None:
+            kwargs["error_type"] = error_type
+        if attempt is not None:
+            kwargs["attempt"] = attempt
+        if retryable is not None:
+            kwargs["retryable"] = retryable
+        if checkpoint_id is not None:
+            kwargs["checkpoint_id"] = checkpoint_id
+
+        self.workflow_event_service.record(**kwargs)
 
     def start_workflow(self, run: Run) -> dict[str, Any]:
         if self.workflow_service is None:
@@ -346,6 +409,109 @@ class RunService:
                             WorkflowStage.REVIEW,
                             "waiting",
                             f"Workflow is waiting for human review of {pending_count} findings",
+                        )
+                finally:
+                    db.close()
+
+        return result
+
+    def retry_workflow(self, run: Run) -> dict[str, Any]:
+        """Retry a failed workflow run, resetting error state and restarting the graph."""
+        if run.status != RunStatus.FAILED:
+            raise ValueError(f"Only failed runs can be retried (current status: {run.status.value})")
+
+        run.status = RunStatus.PENDING
+        run.error_message = None
+        run.completed_at = None
+        run.thread_id = str(uuid4())
+
+        return self.start_workflow(run)
+
+    def retry_node(self, run: Run, node_name: str) -> dict[str, Any]:
+        """Retry a specific failed node, rewinding to its predecessor checkpoint without re-running earlier completed nodes."""
+        if self.workflow_service is None:
+            raise RuntimeError("WorkflowService is not configured")
+
+        if not run.thread_id:
+            raise ValueError("Run does not have a workflow thread")
+
+        from app.workflow.graph import NODE_STAGE_MAP
+        stage = NODE_STAGE_MAP.get(node_name, WorkflowStage.INGESTION)
+
+        run.status = RunStatus.RUNNING
+        run.error_message = None
+        run.completed_at = None
+
+        self._record_event(
+            run=run,
+            stage=stage,
+            status="retrying",
+            message=f"Retrying node '{node_name}' from predecessor checkpoint",
+            node_name=node_name,
+        )
+
+        result = self.workflow_service.retry_node(
+            thread_id=run.thread_id,
+            node_name=node_name,
+        )
+
+        state = result["state"]
+
+        self._sync_workflow_findings(run, state)
+
+        if state.get("status") == "failed":
+            self.fail_run(
+                run,
+                state.get("error", "Workflow failed"),
+            )
+            self._record_event(
+                run,
+                stage,
+                "failed",
+                run.error_message,
+                node_name=node_name,
+            )
+        else:
+            if state.get("human_review_required"):
+                self.wait_for_review(run)
+                self._record_event(
+                    run,
+                    WorkflowStage.REVIEW,
+                    "waiting",
+                    "Workflow is waiting for human review",
+                    node_name="findings_review",
+                )
+            elif state.get("status") == "completed":
+                self.complete_run(run)
+                self._record_event(
+                    run,
+                    WorkflowStage.COMMIT,
+                    "completed",
+                    "Workflow completed successfully",
+                )
+                if self.workflow_result_service is not None:
+                    self.workflow_result_service.create_result(
+                        run_id=run.id,
+                        state=state,
+                    )
+            else:
+                from app.core.database import SessionLocal
+                from app.persistence.models.finding import Finding
+                from app.core.constants import ReviewDecision
+                db = SessionLocal()
+                try:
+                    pending_count = db.query(Finding).filter(
+                        Finding.run_id == run.id,
+                        Finding.review_decision == ReviewDecision.PENDING
+                    ).count()
+                    if pending_count > 0:
+                        self.wait_for_review(run)
+                        self._record_event(
+                            run,
+                            WorkflowStage.REVIEW,
+                            "waiting",
+                            f"Workflow is waiting for human review of {pending_count} findings",
+                            node_name="findings_review",
                         )
                 finally:
                     db.close()
