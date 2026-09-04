@@ -27,19 +27,32 @@ Rather than treating human oversight as an all-or-nothing bottleneck, DocTask in
 1. **Macro-Level Conflict Gate (`human_review`)**: Activated if multi-document reconciliation discovers severe semantic contradictions between agreements (e.g., conflicting governing law or liability limits). Rejection routes execution to a revision loop (`revise` node).
 2. **Micro-Level Finding Gate (`findings_review`)**: Individual policy deviations and checklist violations are synchronized to the `findings` table with initial status `pending`. Operators can independently **Approve** or **Reject** each finding via the React UI or REST/MCP APIs. Once all findings are decided, the workflow resumes and executes `CommitNode`, compiling only approved findings into the final persisted markdown report deliverable.
 
-### 2.3. Resilient Multi-Model LLM Cascade
-To insulate the pipeline from provider rate limits (HTTP 429), quota exhaustion, and transient network errors:
-- **Strict Structured Outputs**: All LLM interactions use Pydantic models with explicit JSON schema validation, eliminating hallucinations and parsing drift.
-- **Automatic Fallback Chain**: If the primary reasoning model (`gemini-2.5-pro`) encounters quota limits or HTTP 503/429 errors, the factory automatically fails over down the cascade:
-  $$\text{gemini-2.5-pro} \xrightarrow{\text{quota/rate-limit}} \text{gemini-2.5-flash} \xrightarrow{\text{quota/rate-limit}} \text{gemini-2.0-flash}$$
-- **Exponential Backoff**: Wrapped with `tenacity` retries to absorb transient socket drops before initiating model fallback.
+### 2.3. Universal Cloud Multi-Provider Model Pool & Automatic Cooldown
+To insulate the pipeline against provider rate limits (HTTP 429), quota exhaustion, and provider outages:
+- **Provider-Agnostic Model Pool**: Decouples execution nodes from concrete LLM APIs via a unified `ModelPool` and `ModelRouter`. Configured with production cloud models:
+  $$\text{gemini:gemini-2.5-flash} \xrightarrow{\text{quota/rate-limit}} \text{gemini:gemini-2.5-flash-lite} \xrightarrow{\text{quota/rate-limit}} \text{groq:llama-3.3-70b-versatile} \xrightarrow{\text{quota/rate-limit}} \text{openrouter:openrouter/free}$$
+- **Temporary Cooldown & Self-Healing**: Rate-limited or quota-exhausted models are marked `TEMPORARILY_UNAVAILABLE` with an automatic cooldown window (default: 300s). The router dynamically routes subsequent calls to healthy candidates, self-healing models back to `AVAILABLE` once their cooldown expires.
+- **Capability-Aware Routing**: Distinguishes between `STRUCTURED_OUTPUT` (strict JSON schema bindings via Pydantic) and `TEXT_GENERATION`, dispatching requests only to models matching the required schema capabilities.
+- **Node Decoupling**: Eliminates rigid model tiers across LangGraph nodes; all nodes query the shared router, ensuring system-wide failover without changing graph topologies.
 
-### 2.4. Incremental Updates & Watched Folder Ingestion
+### 2.4. Comprehensive Node Error Boundary & Observability
+Workflow integrity requires total visibility into execution failures without silently swallowing or misrepresenting errors:
+- **Zero Silent Failures**: Every LangGraph node execution is wrapped in a generic error boundary that captures raw exceptions, categorizes them under a structured taxonomy (`LLM_RATE_LIMIT`, `LLM_QUOTA_EXCEEDED`, `LLM_AUTHENTICATION_ERROR`, `PARSING_ERROR`, `VALIDATION_ERROR`, etc.), and persists failure details into `workflow_events`.
+- **Granular Audit Persistence**: Stores `error_type`, sanitized `error_message`, `retryable` status, and `attempt_number` directly in PostgreSQL.
+- **Frontend Diagnostics & Error Stepper**: The React dashboard displays visual failure badges, execution attempt counts, contextual error descriptions, and retry indicators on every node, preventing secret leaks while giving operators actionable insights.
+
+### 2.5. Agentic Structured Document Mutations & Post-Edit Validation
+When remediating non-compliant clauses or resolving checklist violations:
+- **Discrete Change Proposals**: The engine generates structured `DocumentChangeProposal` objects with explicit operations (`INSERT_PARAGRAPH`, `REPLACE_PARAGRAPH`, `DELETE_PARAGRAPH`, `APPEND_SECTION`) targeted to specific document locations.
+- **Deterministic Mutation & Validation**: The `apply_edits` node performs localized text replacement, followed by `validate_edits` which verifies document structure, regex validity, and syntax integrity before saving.
+- **Itemized Human Acceptance**: Operators can review, accept, or reject individual proposed amendments before final document report generation.
+
+### 2.6. Incremental Updates & Watched Folder Ingestion
 Enterprise contracts evolve through addenda, amendments, and schedules. Reprocessing full corpuses from scratch is slow and expensive.
 - **Deduplication Engine**: Ingested files are fingerprinted via SHA-256 hashes, preventing redundant processing of previously indexed files.
 - **Delta Analysis with Parent-Child Hierarchy**: When new files appear in `storage/watch` or are uploaded to an existing run, DocTask spawns an incremental run linked via `parent_id`. The engine preserves existing playbook rules and parent findings, running classification, extraction, and rule checking solely on the new document.
 
-### 2.5. Dual Human & Machine Interfaces
+### 2.7. Dual Human & Machine Interfaces
 DocTask exposes two complementary control surfaces backed by a shared persistence and service layer:
 - **FastAPI REST API**: Comprehensive endpoints for web clients, document uploads (`multipart/form-data`), run management, and audit log inspection.
 - **FastMCP Protocol Server (`app/mcp/server.py`)**: Implements 9 standardized Model Context Protocol tools, enabling autonomous agent frameworks (Claude Desktop, Cursor, Antigravity) to create runs, upload files, query status, and submit human reviews programmatically.
@@ -56,6 +69,8 @@ DocTask exposes two complementary control surfaces backed by a shared persistenc
 | **Vector DB Synchronization Drift** | External vector databases (Pinecone, Chroma) require dual-write handling and can drift from relational records. | Integrated `pgvector` inside the primary PostgreSQL instance, sharing ACID transactions, foreign keys, and unified database migrations via Alembic. |
 | **Duplicate Report Generation** | Retried workflow runs or repeated resume commands risk creating duplicate report records. | Idempotent `CommitNode` performing upsert logic on `run_id`, maintaining a monotonic `version` counter and strictly filtering for approved findings. |
 | **Cloud-Native vs Local Portability** | Ephemeral serverless container storage loses uploaded files across instances. | Pluggable `StorageAdapter` factory switching transparently between `LocalStorageAdapter` and `GoogleCloudStorageAdapter` via `STORAGE_BACKEND`. |
+| **Single-Provider Quota Bottlenecks** | Peak loads trigger 429 quota exhaustion across identical model accounts. | Universal multi-provider `ModelPool` (Gemini, Groq, OpenRouter) with 300s cooldown rotation and capability filtering. |
+| **Silent Node Failure Obscurity** | Unhandled graph exceptions leave runs hanging without actionable root-cause data. | Universal graph error boundary persisting structured error taxonomy and sanitized frontend diagnostic panels. |
 
 ---
 
@@ -71,7 +86,7 @@ DocTask is engineered as a cloud-native, decoupled system deployed across manage
 | **Backend API & Workflow** | **Google Cloud Run** *(primary)*<br>**Render Web Service** *(backup)* | Containerized Service (`us-central1` / Oregon) | Fully managed serverless container running FastAPI, LangGraph orchestration, and FastMCP. Scales automatically with dynamic `$PORT` routing. |
 | **Relational & Vector DB** | **Render Managed PostgreSQL** | `oregon-postgres.render.com:5432/doctask_3bbu` | PostgreSQL with `pgvector` extension. Houses domain entities and LangGraph `PostgresSaver` checkpoint blobs. |
 | **File & Artifact Storage** | **Google Cloud Storage (GCS)** | Bucket: `nishanth-billing-sandbox-storage` | Object storage for uploaded contracts (PDF/DOCX), playbooks, and generated reports via `GoogleCloudStorageAdapter`. |
-| **LLM Provider** | **Google Cloud Vertex / Gemini** | `gemini-2.5-pro` (Primary)<br>`gemini-2.5-flash` / `gemini-2.0-flash` (Fallbacks) | Serverless AI inference with automatic fallback cascade on rate/quota limits. |
+| **LLM Provider Pool** | **Multi-Cloud (Google Gemini, Groq, OpenRouter)** | `gemini-2.5-flash`, `gemini-2.5-flash-lite`, `llama-3.3-70b-versatile`, `openrouter/free` | Resilient model pool with automatic rate-limit rotation, temporary 300s cooldowns, and structured Pydantic schema enforcement. |
 
 ### 4.2. Build & Packaging Pipeline ("How It Is Deployed")
 

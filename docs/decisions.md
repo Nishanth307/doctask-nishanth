@@ -221,3 +221,83 @@ The `CommitNode` operates under strict idempotency constraints:
 ### Trade-offs & Consequences
 - **Pros**: Completely prevents duplicate reports; guarantees clean version increments and auditable deliverable states.
 - **Cons**: Requires maintaining report version numbers in the database schema.
+
+---
+
+## ADR-011: Universal Cloud LLM Model Pool with Provider-Agnostic Routing & Cooldown
+
+### Context
+Relying exclusively on a single LLM provider (such as Google Gemini) or listing fallback models from that same provider leaves production pipelines vulnerable to quota depletion, project-wide billing hiccups, regional rate-limiting (HTTP 429), or cloud provider outages. Furthermore, hardcoding node-specific model tiers inside individual LangGraph node functions couples business logic to provider model names and prevents dynamic rotation.
+
+### Decision
+We designed a decoupled, provider-agnostic **`ModelPool`** and **`ModelRouter`** architecture:
+1. **Model Pool Abstraction**: Configured via `LLM_MODEL_POOL="gemini:gemini-2.5-flash,gemini:gemini-2.5-flash-lite,groq:llama-3.3-70b-versatile,openrouter:openrouter/free"`.
+2. **Dynamic Rotation & Temporary Cooldown**:
+   - When a model encounters quota or rate-limit errors, the router marks it `TEMPORARILY_UNAVAILABLE` with a cooldown timestamp (`LLM_MODEL_COOLDOWN_SECONDS`, default 300s).
+   - Subsequent calls bypass cooled-down models and route automatically to the next healthy candidate in priority order.
+   - Once cooldown expires, models seamlessly self-heal back to `AVAILABLE`.
+3. **Capability Filtering**: The pool distinguishes between `STRUCTURED_OUTPUT` (Pydantic schema enforcement via JSON schema bindings) and `TEXT_GENERATION` capabilities, routing requests only to models verified to support the required modality.
+4. **Node Independence**: Individual workflow nodes (`Classify`, `Extract`, `Examine`, `GenerateSuggestedChanges`, `Revise`) do not bind to specific model names. They invoke `ModelFactory.create_model_for_node()`, which delegates to the shared router.
+
+### Alternatives Considered
+- **Same-Provider Fallback (Gemini Pro -> Gemini Flash)**: Ineffective during account-level quota exhaustion or provider-wide outages.
+- **Local Fallbacks (Ollama) in Production**: Heavy compute footprint in containerized cloud runtimes with severe cold-start penalties and high RAM usage.
+- **Static Round-Robin**: Disregards model preference hierarchy and fails to protect rate-limited models from repeated hammering.
+
+### Trade-offs & Consequences
+- **Pros**: True multi-cloud resilience (Google, Groq, OpenRouter), automatic cooldown recovery, zero hardcoded model names across workflow nodes, and zero downtime during single-provider rate limits.
+- **Cons**: Requires maintaining valid credentials across multiple cloud providers and verifying structured output adherence across diverse model families.
+
+---
+
+## ADR-012: Comprehensive LangGraph Node Error Boundary & Observability
+
+### Context
+In distributed graph workflows, unhandled exceptions in individual nodes can cause silent failures, hang executions in intermediate states without clear error messaging, or swallow root-cause diagnostics. Clients and operators require clear, structured error explanations without exposing sensitive API keys or stack traces in end-user interfaces.
+
+### Decision
+We implemented a universal node error boundary and structured error taxonomy:
+1. **Structured Error Hierarchy (`backend/app/core/errors.py`)**:
+   - Categorized error codes: `LLM_RATE_LIMIT`, `LLM_QUOTA_EXCEEDED`, `LLM_AUTHENTICATION_ERROR`, `LLM_PROVIDER_ERROR`, `PARSING_ERROR`, `VALIDATION_ERROR`, `DATABASE_ERROR`, `SYSTEM_ERROR`.
+   - Classification of retryability (`is_retryable`) so non-retryable errors (e.g. invalid document schemas, auth errors) fail fast without exhausting useless retries.
+2. **Error Capture & Persistence**:
+   - The graph-level boundary catches node exceptions, increments node attempt counters, and logs structured events into `workflow_events` with `error_type`, `error_message`, `retryable`, and `attempt_number`.
+   - Cleanses and sanitizes error messages to prevent credential leaks.
+3. **Frontend Diagnostics**:
+   - Real-time workflow stepper and node details panel display failed nodes with error badges, attempt counts, clear error explanations, and retry indicators.
+
+### Alternatives Considered
+- **Generic HTTP 500 Responses**: Swallows context and prevents operators from distinguishing between transient provider hiccups and unrecoverable validation failures.
+- **Raw Traceback Exposure in UI**: Security risk exposing internal infrastructure paths and potentially API credentials.
+
+### Trade-offs & Consequences
+- **Pros**: Complete observability for every node; deterministic failure policies; clean and actionable UI feedback.
+- **Cons**: Requires database schema migrations to store error attributes on workflow event records.
+
+---
+
+## ADR-013: Agentic Structured Change Proposals with Deterministic Post-Edit Validation
+
+### Context
+Remediating non-compliant documents requires proposing specific contractual amendments. Producing ungrounded text rewrites often introduces hallucinations, alters unrelated clauses, or fails to preserve contract formatting.
+
+### Decision
+We implemented a multi-stage edit generation and reconciliation architecture:
+1. **Structured Proposals (`DocumentChangeProposal`)**:
+   - Changes are structured as discrete operations (`INSERT_PARAGRAPH`, `REPLACE_PARAGRAPH`, `DELETE_PARAGRAPH`, `APPEND_SECTION`) targeted to specific document locations.
+   - Each proposed change includes `target_text`, `replacement_text`, `section_heading`, `justification`, and `finding_id` references.
+2. **Deterministic Mutation Engine (`apply_edits.py`)**:
+   - Executes exact substring or fuzzy paragraph matching to apply edits directly to the document source.
+3. **Deterministic Post-Edit Validation (`validate_edits.py`)**:
+   - Validates that target texts were cleanly modified, formatting integrity is maintained, and no invalid regex or structural corruptions occurred.
+4. **Human Review Gate**:
+   - Generated proposals are presented in the frontend review panel for itemized human acceptance or rejection prior to final commit.
+
+### Alternatives Considered
+- **Full-Document Whole-Text Regeneration**: Prompts the LLM to rewrite the entire contract; extremely prone to truncation, formatting loss, and hallucinated modifications to unrelated clauses.
+- **Direct Unverified String Injection**: Risks silent failures if target search strings do not exist in the source document.
+
+### Trade-offs & Consequences
+- **Pros**: Verifiable, localized edits; exact diff traceability; zero hallucination of untouched paragraphs.
+- **Cons**: Requires target text strings to match source documents reliably.
+

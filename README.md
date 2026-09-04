@@ -209,18 +209,21 @@ DOCTASK_WATCH_FOLDER=storage/watch
 - **Concurrency Locks**: Uses Postgres `FOR UPDATE` query locking during scan operations to prevent multiple workers from starting overlapping processing threads.
 
 
-## LLM Model Fallback
+## Universal Cloud LLM Multi-Provider Model Pool
 
-DocTask implements robust model fallback mechanism to secure workflow executions against transient provider limitations:
+DocTask implements a decoupled, provider-agnostic model pool and dynamic router to protect workflow executions against quota exhaustion, provider outages, and rate limits:
 
-- **Why it exists**: Mitigates resource/quota exhaustion errors on Gemini models during intense processing.
-- **Trigger Errors**: Switches models when encountering HTTP 429, 503, rate limits, quota limits, or general resource exhaustion exceptions. Does not fallback for user-level malformed requests, authentication errors, or invalid configuration parameters.
-- **Configuration**: Setup fallback priority chains in `.env` using:
-  ```bash
-  LLM_FALLBACK_MODELS=gemini-2.5-pro,gemini-2.5-flash,gemini-2.0-flash
+- **Provider Independence**: Rather than relying on multiple models from a single ecosystem (e.g., only Gemini), DocTask orchestrates models across distinct cloud providers:
+  ```text
+  Primary:     Google Gemini (gemini-2.5-flash)
+  Fallback 1:  Google Gemini Flash-Lite (gemini-2.5-flash-lite)
+  Fallback 2:  Groq Cloud (llama-3.3-70b-versatile)
+  Fallback 3:  OpenRouter (openrouter/free)
   ```
-- **Error Presentation**: If all configured fallback models are exhausted, the execution fails with a descriptive error listing all attempted models.
-- **State Integrity**: Since model swapping is handled locally inside the model wrapper, the LangGraph checkpointer and Postgres thread state are preserved intact without duplication.
+- **Dynamic Rotation & 300s Cooldown**: Encountering rate limits (HTTP 429), quota depletion, or provider 503 errors marks the offending model `TEMPORARILY_UNAVAILABLE` with an automatic cooldown timer (`LLM_MODEL_COOLDOWN_SECONDS=300`). Subsequent graph node calls automatically bypass cooled-down models and route to healthy alternatives, self-healing back to `AVAILABLE` once the cooldown period expires.
+- **Capability Filtering**: The pool verifies model capabilities (`STRUCTURED_OUTPUT` for strict Pydantic JSON schema adherence vs `TEXT_GENERATION`), ensuring only qualified models receive schema-constrained tasks.
+- **Unified Node Routing**: LangGraph nodes do not bind to hardcoded model names; all nodes request model instances through `ModelFactory.create_model_for_node()`, which delegates to the shared router.
+- **Generic Error Observability**: Every node execution is shielded by a universal error boundary. Raw exceptions are mapped to a structured taxonomy (`LLM_RATE_LIMIT`, `LLM_QUOTA_EXCEEDED`, `PARSING_ERROR`, `VALIDATION_ERROR`, etc.) and persisted into `workflow_events` with sanitized error summaries and retry metrics for frontend visualization.
 
 
 ## Deployment & Cloud Infrastructure
@@ -232,7 +235,7 @@ DocTask is deployed across cloud infrastructure:
 - **Backend API & LangGraph Engine**: Containerized on **Google Cloud Run** (with fallback on Render Web Service), listening on dynamic `${PORT:-8080}` with automatic Alembic migrations on startup.
 - **Database & Checkpointer**: Managed **PostgreSQL with `pgvector`** (Render PostgreSQL, Oregon) storing relational entities and LangGraph checkpoints.
 - **Object Storage**: **Google Cloud Storage (GCS)** (`nishanth-billing-sandbox-storage`) managed via `GoogleCloudStorageAdapter` for persistent document and report storage.
-- **AI Models**: **Google Cloud Gemini API** (`gemini-2.5-pro` with automatic fallback to `gemini-2.5-flash` and `gemini-2.0-flash`).
+- **AI Models**: **Multi-Cloud Model Pool** (Google Gemini `gemini-2.5-flash` / `gemini-2.5-flash-lite`, Groq `llama-3.3-70b-versatile`, OpenRouter `openrouter/free`).
 
 ### Build & Deployment Workflow
 1. **Container Build (`Dockerfile`)**:
@@ -246,11 +249,12 @@ DocTask is deployed across cloud infrastructure:
      --region us-central1 \
      --allow-unauthenticated \
      --memory 1Gi \
-     --cpu 1
+     --cpu 1 \
+     --service-account app-storage-sa@nishanth-billing-sandbox.iam.gserviceaccount.com
    ```
 3. **Deploy Frontend to Vercel**:
+   Auto-deployed on git push to `main` via Vercel GitHub integration. Local build check:
    ```bash
    cd frontend
    npm run build
-   vercel --prod
    ```

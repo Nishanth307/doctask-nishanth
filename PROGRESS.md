@@ -82,6 +82,31 @@ This document chronicles the chronological development log, engineering mileston
 
 ---
 
+### Phase 7: Node Error Observability & Structured Document Remediation
+- **Comprehensive Error Boundaries**:
+  - Implemented universal error handling across all LangGraph nodes without hardcoding node names.
+  - Added structured error hierarchy (`backend/app/core/errors.py`) with retryability classification and sanitization.
+  - Persisted error telemetry (`error_type`, `error_message`, `retryable`, `attempt_number`) to `workflow_events` and database.
+  - Extended frontend workflow stepper and node details panel with live error diagnosis, attempt counters, and retry controls.
+- **Agentic Document Mutation & Post-Edit Validation**:
+  - Structured change proposals (`DocumentChangeProposal`) supporting `INSERT_PARAGRAPH`, `REPLACE_PARAGRAPH`, `DELETE_PARAGRAPH`, and `APPEND_SECTION`.
+  - Added deterministic string/paragraph patching (`apply_edits`) and post-edit integrity validation (`validate_edits`).
+  - Added full export and download routes (`/api/v1/runs/{id}/export`, `/export/download`, `/final-document`) with cryptographic SHA-256 section comparison.
+
+---
+
+### Phase 8: Universal Cloud LLM Multi-Provider Model Pool & Cloud Deployment
+- **Universal Cloud Model Pool & Router**:
+  - Engineered thread-safe `ModelPool` with dynamic rotation across Google Gemini (`gemini-2.5-flash`, `gemini-2.5-flash-lite`), Groq (`llama-3.3-70b-versatile`), and OpenRouter (`openrouter/free`).
+  - Implemented 300s automatic cooldown window on quota/rate-limit errors with transparent self-healing.
+  - Decoupled LangGraph nodes from specific model names; all nodes query the unified router with capability filtering (`STRUCTURED_OUTPUT` vs `TEXT_GENERATION`).
+- **Cloud Infrastructure Deployment**:
+  - Applied database schema migrations (`c4f1e83b9a12` and `d5e2390f4a13`) to production Render PostgreSQL database.
+  - Built and deployed containerized backend to Google Cloud Run (`us-central1`).
+  - Synchronized and verified frontend edge deployment on Vercel.
+
+---
+
 ## Key Assumptions & Constraints
 
 1. **Document Formats**: Primary enterprise support is focused on `.pdf`, `.docx`, and `.txt` files. Non-standard proprietary formats are converted or parsed via fallback plain text.

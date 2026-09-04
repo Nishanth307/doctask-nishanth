@@ -213,9 +213,14 @@ Retrieve comprehensive details including all associated findings, final delivera
       "id": "c1d2e3f4-0000-1111-2222-333344445555",
       "run_id": "7b7e8d42-5f3a-4a8a-9e23-7a98ef123456",
       "stage": "classify",
+      "node_name": "classify",
       "status": "completed",
       "message": "Classified 2 documents successfully",
       "duration_ms": 1420,
+      "error_type": null,
+      "error_message": null,
+      "retryable": null,
+      "attempt_number": 1,
       "created_at": "2026-09-03T18:00:15Z"
     }
   ],
@@ -229,7 +234,18 @@ Retrieve comprehensive details including all associated findings, final delivera
     "human_decision": "approved",
     "created_at": "2026-09-03T18:04:30Z",
     "updated_at": "2026-09-03T18:05:00Z"
-  }
+  },
+  "execution_history": [
+    {
+      "node_name": "classify",
+      "stage": "classify",
+      "status": "completed",
+      "duration_ms": 1420,
+      "attempt_number": 1,
+      "created_at": "2026-09-03T18:00:15Z"
+    }
+  ],
+  "last_error": null
 }
 ```
 
@@ -249,6 +265,24 @@ Initiates the LangGraph execution graph for the specified run.
   }
 }
 ```
+
+---
+
+#### `POST /api/v1/runs/{run_id}/retry`
+Retries execution of a failed or halted run from the last checkpoint.
+
+**Response (`200 OK`):** Returns `WorkflowRunResponse` with current `thread_id` and `state`.
+
+---
+
+#### `POST /api/v1/runs/{run_id}/retry/{node_name}`
+Selectively retries execution starting at a specific node (e.g., `classify`, `extract`, `examine`).
+
+**Path Parameters:**
+- `run_id` (UUID, required): The run identifier.
+- `node_name` (string, required): The target node name to re-execute.
+
+**Response (`200 OK`):** Returns `WorkflowRunResponse`.
 
 ---
 
@@ -312,6 +346,53 @@ Gracefully halts an in-progress or paused run, updating status to `cancelled`.
 
 #### `DELETE /api/v1/runs/{run_id}`
 Deletes a run and cascades deletion across its associated findings, reports, events, and document records.
+
+---
+
+#### `GET /api/v1/runs/{run_id}/export`
+Returns a structured JSON export of the entire document lifecycle including the final modified contract, list of applied vs rejected changes, deterministic validation outcome, provenance history, and cryptographic section hashes.
+
+**Response (`200 OK`):**
+```json
+{
+  "run_id": "7b7e8d42-5f3a-4a8a-9e23-7a98ef123456",
+  "run_name": "Acquisition Due Diligence 2026",
+  "status": "completed",
+  "stage": "completed",
+  "has_final_document": true,
+  "final_content": "# Amended Master Services Agreement\n...",
+  "total_findings": 3,
+  "approved_findings": 2,
+  "rejected_findings": 1,
+  "applied_changes": 2,
+  "failed_changes": 0,
+  "validation_passed": true,
+  "validation_summary": "All 2 approved changes applied cleanly. Section checksums verified.",
+  "change_history": [
+    {
+      "operation": "REPLACE_PARAGRAPH",
+      "section_heading": "12. Governing Law",
+      "timestamp": "2026-09-03T18:04:10Z",
+      "finding_id": "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d"
+    }
+  ],
+  "section_hashes": {
+    "1. Definitions": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "12. Governing Law": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "findings": []
+}
+```
+
+---
+
+#### `GET /api/v1/runs/{run_id}/export/download`
+Directly downloads the generated final contract text as an attachment file (`Content-Disposition: attachment; filename="final_contract_{run_id}.txt"`).
+
+---
+
+#### `GET /api/v1/runs/{run_id}/final-document`
+Returns the final contract text along with before-and-after section SHA-256 hash comparisons, providing cryptographic proof that non-targeted clauses remained unchanged.
 
 ---
 
