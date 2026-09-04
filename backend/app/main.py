@@ -12,13 +12,22 @@ import threading
 
 def _warmup_embeddings():
     try:
+        import os
+        os.environ.setdefault("HF_HUB_OFFLINE", "1")
+        os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
         import torch
         torch.set_num_threads(1)
         from sentence_transformers import SentenceTransformer
         from app.services.providers.huggingface_embeddings import _model_cache
-        _model_cache["sentence-transformers/all-MiniLM-L6-v2"] = SentenceTransformer(
-            "sentence-transformers/all-MiniLM-L6-v2", device="cpu"
-        )
+        try:
+            model = SentenceTransformer(
+                "sentence-transformers/all-MiniLM-L6-v2", device="cpu", local_files_only=True
+            )
+        except Exception:
+            model = SentenceTransformer(
+                "sentence-transformers/all-MiniLM-L6-v2", device="cpu"
+            )
+        _model_cache["sentence-transformers/all-MiniLM-L6-v2"] = model
     except Exception:
         pass
 

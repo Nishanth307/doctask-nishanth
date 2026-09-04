@@ -14,7 +14,14 @@ class HuggingFaceEmbeddingService(EmbeddingService):
         self.model_name = model.value
         try:
             if SentenceTransformer is not None:
-                self.model = SentenceTransformer(self.model_name)
+                if self.model_name in _model_cache:
+                    self.model = _model_cache[self.model_name]
+                else:
+                    try:
+                        self.model = SentenceTransformer(self.model_name, local_files_only=True)
+                    except Exception:
+                        self.model = SentenceTransformer(self.model_name)
+                    _model_cache[self.model_name] = self.model
             else:
                 self.model = None
         except Exception:
